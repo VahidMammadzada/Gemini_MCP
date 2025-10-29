@@ -1,0 +1,38 @@
+# Core Framework
+fastmcp>=2.0.0
+gradio>=5.0.0
+mcp>=1.0.0
+langchain>=0.2.16
+langchain-mcp-adapters>=0.1.0
+langchain-google-genai>=0.0.11
+
+# ChromaDB and Vector Store
+chromadb>=0.5.0
+chromadb-client>=0.5.0
+
+# Document Processing
+PyPDF2>=3.0.0
+pypdf>=5.0.0
+python-docx>=1.1.0
+
+# HTTP and Async
+httpx>=0.27.0
+aiohttp>=3.9.0
+
+# Data Processing
+numpy>=1.24.0
+pandas>=2.0.0
+
+# Environment Management
+python-dotenv>=1.0.0
+
+# Embeddings (required for ChromaDB default embedding function)
+onnxruntime
+
+# MCP Support (for proper MCP server integration)
+uv>=0.9.0  # Provides uvx command for Chroma MCP
+
+# Optional: Enhanced embeddings
+#sentence-transformers>=2.2.0  # For better embeddings
+#openai>=1.0.0  # If using OpenAI embeddings
+#cohere>=4.0.0  # If using Cohere embeddings
