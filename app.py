@@ -3,35 +3,48 @@ import asyncio
 import gradio as gr
 from crypto_agent_mcp import CryptoAgentMCP
 from rag_agent_mcp import RAGAgentMCP
-from decision_maker import DecisionMaker
+from stock_agent_mcp import StockAgentMCP
+# from decision_maker import DecisionMaker  
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 import tempfile
 import os
-
+from langgraph_supervisor import ReActSupervisor
 
 class MultiAgentApp:
-    """Main application orchestrating LLM decision maker and agents."""
+    """Main application orchestrating LLM supervisor and agents."""
 
     def __init__(self):
-        self.decision_maker = DecisionMaker()
         self.crypto_agent = CryptoAgentMCP()
         self.rag_agent = RAGAgentMCP()
+        self.stock_agent = StockAgentMCP()
+        self.supervisor = None  # Will be initialized after agents
         self.chat_history: List[Dict[str, str]] = []
         self.initialized = False
 
     async def initialize(self):
-        """Initialize all agents."""
+        """Initialize all agents and supervisor."""
         if not self.initialized:
             print("🚀 Initializing Multi-Agent System...")
+            
+            # Initialize agents first
             await self.crypto_agent.initialize()
             await self.rag_agent.initialize()
+            await self.stock_agent.initialize()
+            
+            # Initialize supervisor with agent references
+            self.supervisor = ReActSupervisor(
+                crypto_agent=self.crypto_agent,
+                rag_agent=self.rag_agent,
+                stock_agent=self.stock_agent
+            )
+            
             self.initialized = True
-            print("✅ System initialized and ready!")
+            print("✅ System initialized with LangGraph supervisor!")
     
     async def process_query(self, query: str) -> tuple[str, str]:
         """
-        Process user query through the system.
+        Process user query through the supervisor system.
         
         Args:
             query: User's input query
@@ -48,49 +61,38 @@ class MultiAgentApp:
                 await self.initialize()
             
             debug_info = []
+            debug_info.append("🎯 **LangGraph Supervisor Processing**")
             
-            # Step 1: Decision maker decides which agent to use
-            debug_info.append("🤔 **Decision Making Phase**")
-            decision = await self.decision_maker.decide_agent(query, history=self.chat_history)
+            # Process through supervisor
+            result = await self.supervisor.process(query, history=self.chat_history)
             
-            agent_name = decision.get('agent', 'none')
-            reasoning = decision.get('reasoning', 'No reasoning provided')
-            confidence = decision.get('confidence', 0.0)
-            
-            debug_info.append(f"Selected Agent: **{agent_name}**")
-            debug_info.append(f"Reasoning: {reasoning}")
-            debug_info.append(f"Confidence: {confidence:.2f}\n")
-            
-            # Step 2: Route to appropriate agent
-            if agent_name == 'crypto':
-                debug_info.append("💰 **Executing Crypto Agent**")
-                agent_result = await self.crypto_agent.process(query, history=self.chat_history)
-
-                if agent_result.get("success"):
-                    final_response = agent_result.get("response", "No response generated")
-                else:
-                    final_response = f"Error: {agent_result.get('error', 'Unknown error')}"
-
-            elif agent_name == 'rag':
-                debug_info.append("📚 **Executing RAG Agent**")
-                agent_result = await self.rag_agent.process(query, history=self.chat_history)
-
-                if agent_result.get("success"):
-                    final_response = agent_result.get("response", "No response generated")
-                else:
-                    final_response = f"Error: {agent_result.get('error', 'Unknown error')}"
-
-            elif agent_name == 'none':
-                final_response = (
-                    "I'm not sure how to handle that query with my current capabilities. "
-                    "I'm equipped to help with:\n"
-                    "- Cryptocurrency questions (prices, markets, trends)\n"
-                    "- Document Q&A (upload documents and ask questions about them)\n\n"
-                    "Could you rephrase your question?"
-                )
+            if result.get("success"):
+                final_response = result.get("response", "No response generated")
+                
+                # Extract debug information
+                metadata = result.get("metadata", {})
+                agent_results = result.get("agent_results", {})
+                
+                # Add decision info
+                if "last_decision" in metadata:
+                    decision = metadata["last_decision"]
+                    debug_info.append(f"Decision: **{decision.get('agent')}**")
+                    debug_info.append(f"Reasoning: {decision.get('reasoning')}")
+                    debug_info.append(f"Confidence: {decision.get('confidence', 0):.2f}")
+                
+                # Add agent execution info
+                for agent_name, agent_result in agent_results.items():
+                    debug_info.append(f"\n**{agent_name.upper()} Agent:**")
+                    if agent_result.get("success"):
+                        debug_info.append(f"✅ Executed successfully")
+                    else:
+                        debug_info.append(f"❌ Error: {agent_result.get('error')}")
+                
             else:
-                final_response = f"Agent '{agent_name}' is not yet implemented."
+                final_response = f"Error: {result.get('error', 'Unknown error')}"
+                debug_info.append(f"❌ Supervisor error: {result.get('error')}")
             
+            # Update history
             self.chat_history.append({"user": query, "assistant": final_response})
             if len(self.chat_history) > 20:
                 self.chat_history = self.chat_history[-20:]
@@ -164,6 +166,7 @@ class MultiAgentApp:
         if self.initialized:
             await self.crypto_agent.cleanup()
             await self.rag_agent.cleanup()
+            await self.stock_agent.cleanup()
             print("🧹 Cleanup complete")
         self.chat_history.clear()
 
@@ -182,13 +185,16 @@ def create_ui():
         gr.Markdown("""
         # 🤖 Multi-Agent AI Assistant
 
-        This system has two specialized agents:
+        This system has three specialized agents:
         - **💰 Crypto Agent**: Real-time cryptocurrency data via CoinGecko MCP
+        - **📈 Stock Agent**: Stock market data and company information via Alpha Vantage MCP
         - **📚 RAG Agent**: Document Q&A powered by ChromaDB Cloud
 
         **Example queries:**
         - What's the current price of Bitcoin?
         - What are the trending coins today?
+        - What's the stock price of Apple?
+        - Show me Tesla's financial overview
         - What does the document say about [topic]?
         - Search my documents for [keyword]
         """)
@@ -240,8 +246,9 @@ def create_ui():
 
         1. **Decision Maker (Gemini)**: Analyzes your query and routes to the appropriate agent
         2. **Crypto Agent**: Connects to CoinGecko MCP Server for real-time crypto data
-        3. **RAG Agent**: Uses ChromaDB Cloud for document storage and semantic search
-        4. **Response Generation**: Each agent uses Gemini with specialized tools
+        3. **Stock Agent**: Connects to Alpha Vantage MCP Server for stock market data
+        4. **RAG Agent**: Uses ChromaDB Cloud for document storage and semantic search
+        5. **Response Generation**: Each agent uses Gemini with specialized tools
         """)
         
         # Define the async wrappers for Gradio

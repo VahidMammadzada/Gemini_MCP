@@ -26,17 +26,19 @@ class AgentState(TypedDict):
 class ReActSupervisor:
     """Supervisor using ReAct pattern for multi-agent orchestration."""
     
-    def __init__(self, crypto_agent=None, rag_agent=None, max_steps: int = 3):
+    def __init__(self, crypto_agent=None, rag_agent=None, stock_agent=None, max_steps: int = 3):
         """
         Initialize the ReAct supervisor.
         
         Args:
             crypto_agent: Crypto agent instance
-            rag_agent: RAG agent instance  
+            rag_agent: RAG agent instance
+            stock_agent: Stock agent instance
             max_steps: Maximum reasoning steps before forcing completion
         """
         self.crypto_agent = crypto_agent
         self.rag_agent = rag_agent
+        self.stock_agent = stock_agent
         self.max_steps = max_steps
         
         # Initialize supervisor LLM with structured output
@@ -59,7 +61,8 @@ class ReActSupervisor:
         # Add nodes
         workflow.add_node("think", self.think_node)  # Reasoning step
         workflow.add_node("act_crypto", self.act_crypto_node)  # Action: call crypto agent
-        workflow.add_node("act_rag", self.act_rag_node)  # Action: call RAG agent  
+        workflow.add_node("act_rag", self.act_rag_node)  # Action: call RAG agent
+        workflow.add_node("act_stock", self.act_stock_node)  # Action: call stock agent
         workflow.add_node("observe", self.observe_node)  # Process agent outputs
         workflow.add_node("finish", self.finish_node)  # Generate final answer
         
@@ -73,6 +76,7 @@ class ReActSupervisor:
             {
                 "crypto": "act_crypto",
                 "rag": "act_rag",
+                "stock": "act_stock",
                 "finish": "finish",
             }
         )
@@ -80,6 +84,7 @@ class ReActSupervisor:
         # Actions lead to observe
         workflow.add_edge("act_crypto", "observe")
         workflow.add_edge("act_rag", "observe")
+        workflow.add_edge("act_stock", "observe")
         
         # Observe leads back to think (or finish if max steps)
         workflow.add_conditional_edges(
@@ -112,6 +117,7 @@ Current Query: {state['query']}
 
 Available Actions:
 - CALL_CRYPTO: Get cryptocurrency market data, prices, trends
+- CALL_STOCK: Get stock market data, company information, financial data
 - CALL_RAG: Search and retrieve information from uploaded documents
 - FINISH: Provide final answer (use when you have sufficient information)
 
@@ -123,15 +129,15 @@ Information Gathered So Far:
 IMPORTANT INSTRUCTIONS:
 1. Check what information you ALREADY HAVE in the context above
 2. Do NOT call the same agent twice unless you need different information
-3. If you already have an answer from RAG or Crypto, move to FINISH
+3. If you already have an answer from RAG, Crypto, or Stock, move to FINISH
 4. Only call another agent if you need ADDITIONAL different information
 5. FINISH when you have enough information to answer the user's query
 
 Based on what you know so far, reason about what to do next.
 Format your response as:
 
-THOUGHT: [Analyze what you have and what you still need. Be specific about whether you already called RAG or Crypto]
-ACTION: [CALL_CRYPTO | CALL_RAG | FINISH]
+THOUGHT: [Analyze what you have and what you still need. Be specific about whether you already called RAG, Crypto, or Stock]
+ACTION: [CALL_CRYPTO | CALL_STOCK | CALL_RAG | FINISH]
 JUSTIFICATION: [Why this action will help. If FINISH, explain why current info is sufficient]"""
 
         response = await self.supervisor_llm.ainvoke([
@@ -152,6 +158,8 @@ JUSTIFICATION: [Why this action will help. If FINISH, explain why current info i
             action_text = content.split("ACTION:")[1].split("\n")[0].strip().upper()
             if "CRYPTO" in action_text:
                 action = "crypto"
+            elif "STOCK" in action_text:
+                action = "stock"
             elif "RAG" in action_text:
                 action = "rag"
             else:
@@ -211,6 +219,25 @@ JUSTIFICATION: [Why this action will help. If FINISH, explain why current info i
         # Store raw output
         agent_outputs = state.get("agent_outputs", {})
         agent_outputs["rag"] = result
+        
+        return {"agent_outputs": agent_outputs}
+    
+    async def act_stock_node(self, state: AgentState) -> Dict[str, Any]:
+        """Execute stock agent and return raw output."""
+        if not self.stock_agent:
+            return {"agent_outputs": {"stock_error": "Stock agent not available"}}
+        
+        print("   Calling Stock Agent...")
+        
+        # Get agent output
+        result = await self.stock_agent.process(
+            state["query"],
+            history=self._extract_history(state["messages"])
+        )
+        
+        # Store raw output
+        agent_outputs = state.get("agent_outputs", {})
+        agent_outputs["stock"] = result
         
         return {"agent_outputs": agent_outputs}
     
@@ -299,6 +326,8 @@ Final Answer:"""
                 
                 if "CRYPTO" in action_line or "CALL_CRYPTO" in action_line:
                     return "crypto"
+                elif "STOCK" in action_line or "CALL_STOCK" in action_line:
+                    return "stock"
                 elif "RAG" in action_line or "CALL_RAG" in action_line:
                     return "rag"
                 elif "FINISH" in action_line:

@@ -89,8 +89,8 @@ class CryptoAgentMCP:
 
             # Initialize Gemini chat model bound to tools
             self.model = ChatGoogleGenerativeAI(
-                model="gemini-2.0-flash-exp",
-                temperature=0.0,
+                model="gemini-2.5-flash",
+                temperature=0.1,
                 google_api_key=config.GOOGLE_API_KEY,
             )
             self.model_with_tools = self.model.bind_tools(self.tools)

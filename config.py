@@ -15,7 +15,7 @@ class Config:
     # API Keys
     GOOGLE_API_KEY: Optional[str] = None
     COINGECKO_API_KEY: Optional[str] = None
-
+    ALPHA_VANTAGE_API_KEY: Optional[str] = None
     # ChromaDB Cloud Configuration
     CHROMA_API_KEY: Optional[str] = None
     CHROMA_TENANT: Optional[str] = None
@@ -47,6 +47,7 @@ class Config:
     def from_env(cls) -> "Config":
         """Load configuration from environment variables."""
         return cls(
+            ALPHA_VANTAGE_API_KEY=os.getenv("ALPHA_VANTAGE_API_KEY"),
             GOOGLE_API_KEY=os.getenv("GOOGLE_API_KEY"),
             COINGECKO_API_KEY=os.getenv("COINGECKO_API_KEY"),
             COINGECKO_MCP_URL=os.getenv(
@@ -82,6 +83,12 @@ class Config:
         if not self.CHROMA_DATABASE:
             errors.append("CHROMA_DATABASE environment variable is required for ChromaDB Cloud")
 
+        if not self.ALPHA_VANTAGE_API_KEY:
+                raise ValueError(
+                    "ALPHA_VANTAGE_API_KEY not configured. "
+                    "Add it to your .env file. "
+                    "Get your API key from: https://www.alphavantage.co/support/#api-key"
+                )
         if errors:
             raise ValueError(
                 "Configuration validation failed:\n" + "\n".join(f"  - {e}" for e in errors)
