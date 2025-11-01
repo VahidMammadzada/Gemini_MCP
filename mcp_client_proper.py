@@ -273,3 +273,18 @@ class CoinGeckoPublicMCPClient(ProperMCPClient):
             ],
             env=None
         )
+
+# Have to provide limits to the DuckDuckGo MCP server process to avoid excessive resource usage
+class DuckDuckGoMCPClient(ProperMCPClient):
+    """MCP client for DuckDuckGo MCP Server."""
+
+    def __init__(self):
+        """Initialize DuckDuckGo MCP client."""
+        super().__init__(
+            name="DuckDuckGo",
+            server_command="uvx",
+            server_args=[
+                "duckduckgo-mcp-server"
+            ],
+            env=None
+        )

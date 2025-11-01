@@ -1,13 +1,12 @@
-"""Main application with Gradio UI for multi-agent LLM system."""
+"""Main application with Gradio Chat UI for multi-agent LLM system."""
 import asyncio
 import gradio as gr
 from crypto_agent_mcp import CryptoAgentMCP
 from rag_agent_mcp import RAGAgentMCP
 from stock_agent_mcp import StockAgentMCP
-# from decision_maker import DecisionMaker  
-from typing import Dict, Any, Optional, List
+from search_agent_mcpp import SearchAgentMCP
+from typing import Dict, Any, Optional, List, AsyncGenerator
 from pathlib import Path
-import tempfile
 import os
 from langgraph_supervisor import ReActSupervisor
 
@@ -18,7 +17,8 @@ class MultiAgentApp:
         self.crypto_agent = CryptoAgentMCP()
         self.rag_agent = RAGAgentMCP()
         self.stock_agent = StockAgentMCP()
-        self.supervisor = None  # Will be initialized after agents
+        self.search_agent = SearchAgentMCP()
+        self.supervisor = None
         self.chat_history: List[Dict[str, str]] = []
         self.initialized = False
 
@@ -31,78 +31,114 @@ class MultiAgentApp:
             await self.crypto_agent.initialize()
             await self.rag_agent.initialize()
             await self.stock_agent.initialize()
+            await self.search_agent.initialize()
             
             # Initialize supervisor with agent references
             self.supervisor = ReActSupervisor(
                 crypto_agent=self.crypto_agent,
                 rag_agent=self.rag_agent,
-                stock_agent=self.stock_agent
+                stock_agent=self.stock_agent,
+                search_agent=self.search_agent
             )
             
             self.initialized = True
             print("✅ System initialized with LangGraph supervisor!")
+            return "✅ All agents initialized and ready!"
     
-    async def process_query(self, query: str) -> tuple[str, str]:
+    async def process_query_streaming(
+        self,
+        message: str,
+        history: List[Dict[str, str]]
+    ) -> AsyncGenerator[str, None]:
         """
-        Process user query through the supervisor system.
+        Process user query with streaming updates.
         
         Args:
-            query: User's input query
+            message: User's input message
+            history: Chat history in Gradio messages format [{"role": "user/assistant", "content": "..."}]
             
-        Returns:
-            Tuple of (response, debug_info)
+        Yields:
+            Streaming response updates
         """
-        if not query.strip():
-            return "Please enter a query.", ""
+        if not message.strip():
+            yield "Please enter a query."
+            return
         
         try:
-            # Ensure system is initialized
+            # Check if system is initialized
             if not self.initialized:
-                await self.initialize()
+                yield "❌ System not initialized. Please restart the application."
+                return
             
-            debug_info = []
-            debug_info.append("🎯 **LangGraph Supervisor Processing**")
+            # Show initial status
+            yield "🎯 **LangGraph Supervisor Processing**\n\n"
             
-            # Process through supervisor
-            result = await self.supervisor.process(query, history=self.chat_history)
+            # Convert Gradio messages format to internal format
+            internal_history = []
+            for msg in history:
+                role = msg.get("role", "")
+                content = msg.get("content", "")
+                if role == "user":
+                    internal_history.append({"user": content})
+                elif role == "assistant":
+                    internal_history.append({"assistant": content})
             
-            if result.get("success"):
-                final_response = result.get("response", "No response generated")
-                
-                # Extract debug information
-                metadata = result.get("metadata", {})
-                agent_results = result.get("agent_results", {})
-                
-                # Add decision info
-                if "last_decision" in metadata:
-                    decision = metadata["last_decision"]
-                    debug_info.append(f"Decision: **{decision.get('agent')}**")
-                    debug_info.append(f"Reasoning: {decision.get('reasoning')}")
-                    debug_info.append(f"Confidence: {decision.get('confidence', 0):.2f}")
-                
-                # Add agent execution info
-                for agent_name, agent_result in agent_results.items():
-                    debug_info.append(f"\n**{agent_name.upper()} Agent:**")
-                    if agent_result.get("success"):
-                        debug_info.append(f"✅ Executed successfully")
-                    else:
-                        debug_info.append(f"❌ Error: {agent_result.get('error')}")
-                
-            else:
-                final_response = f"Error: {result.get('error', 'Unknown error')}"
-                debug_info.append(f"❌ Supervisor error: {result.get('error')}")
+            # Process through supervisor with streaming
+            current_response = "🎯 **LangGraph Supervisor Processing**\n\n"
             
-            # Update history
-            self.chat_history.append({"user": query, "assistant": final_response})
+            async for update in self.supervisor.process_streaming(message, history=internal_history):
+                if update.get("type") == "thinking":
+                    # Show thinking step
+                    step = update.get("step", 0)
+                    thought = update.get("thought", "")
+                    action = update.get("action", "")
+                    justification = update.get("justification", "")
+                    
+                    thinking_update = f"💭 **Step {step}: Thinking**\n"
+                    thinking_update += f"*Thought:* {thought}\n"
+                    thinking_update += f"*Action:* {action.upper()}\n"
+                    thinking_update += f"*Justification:* {justification}\n\n"
+                    
+                    current_response += thinking_update
+                    yield current_response
+                
+                elif update.get("type") == "action":
+                    # Show agent call
+                    agent = update.get("agent", "unknown")
+                    action_update = f"🔧 **Calling {agent.upper()} Agent...**\n\n"
+                    current_response += action_update
+                    yield current_response
+                
+                elif update.get("type") == "observation":
+                    # Show observation
+                    agent = update.get("agent", "unknown")
+                    summary = update.get("summary", "")
+                    obs_update = f"📊 **Observation from {agent.upper()}:**\n{summary}\n\n"
+                    current_response += obs_update
+                    yield current_response
+                
+                elif update.get("type") == "final":
+                    # Show final answer
+                    final_answer = update.get("response", "No response generated")
+                    final_update = f"📝 **Final Answer:**\n\n{final_answer}"
+                    current_response += final_update
+                    yield current_response
+                
+                elif update.get("type") == "error":
+                    # Show error
+                    error = update.get("error", "Unknown error")
+                    error_update = f"❌ **Error:** {error}"
+                    current_response += error_update
+                    yield current_response
+            
+            # Update chat history
+            self.chat_history.append({"user": message})
             if len(self.chat_history) > 20:
                 self.chat_history = self.chat_history[-20:]
-
-            debug_output = "\n".join(debug_info)
-            return final_response, debug_output
             
         except Exception as e:
-            error_msg = f"❌ Error processing query: {str(e)}"
-            return error_msg, error_msg
+            error_msg = f"❌ **Error processing query:** {str(e)}"
+            yield error_msg
     
     async def upload_document(
         self,
@@ -121,7 +157,7 @@ class MultiAgentApp:
         """
         try:
             if not self.initialized:
-                await self.initialize()
+                return "❌ System not initialized. Please restart the application."
 
             if file_obj is None:
                 return "❌ No file selected"
@@ -167,6 +203,7 @@ class MultiAgentApp:
             await self.crypto_agent.cleanup()
             await self.rag_agent.cleanup()
             await self.stock_agent.cleanup()
+            await self.search_agent.cleanup()
             print("🧹 Cleanup complete")
         self.chat_history.clear()
 
@@ -179,115 +216,158 @@ app = MultiAgentApp()
 
 
 def create_ui():
-    """Create and configure the Gradio UI."""
+    """Create and configure the Gradio Chat UI."""
 
     with gr.Blocks(title="Multi-Agent Assistant", theme=gr.themes.Soft()) as interface:
         gr.Markdown("""
-        # 🤖 Multi-Agent AI Assistant
+        # 🤖 Multi-Agent AI Assistant with Streaming
 
-        This system has three specialized agents:
+        This system has four specialized agents working together:
         - **💰 Crypto Agent**: Real-time cryptocurrency data via CoinGecko MCP
         - **📈 Stock Agent**: Stock market data and company information via Alpha Vantage MCP
         - **📚 RAG Agent**: Document Q&A powered by ChromaDB Cloud
+        - **🔍 Search Agent**: Web search powered by DuckDuckGo MCP
 
-        **Example queries:**
-        - What's the current price of Bitcoin?
-        - What are the trending coins today?
-        - What's the stock price of Apple?
-        - Show me Tesla's financial overview
-        - What does the document say about [topic]?
-        - Search my documents for [keyword]
+        Watch the agents think and collaborate in real-time!
         """)
         
         with gr.Row():
-            with gr.Column(scale=2):
-                # Document Upload Section
-                with gr.Accordion("📄 Upload Documents to RAG Agent", open=False):
-                    file_upload = gr.File(
-                        label="Upload PDF, TXT, or DOCX",
-                        file_types=[".pdf", ".txt", ".docx"],
-                        type="filepath"
-                    )
-                    upload_btn = gr.Button("📤 Upload to ChromaDB Cloud", variant="secondary")
-                    upload_status = gr.Textbox(
-                        label="Upload Status",
-                        lines=3,
-                        interactive=False
-                    )
-
-                gr.Markdown("### 💬 Ask a Question")
-
-                query_input = gr.Textbox(
-                    label="Your Query",
-                    placeholder="Ask about crypto or your uploaded documents...",
-                    lines=3
+            with gr.Column(scale=3):
+                # Chat Interface
+                chatbot = gr.Chatbot(
+                    label="Multi-Agent Assistant",
+                    height=400,
+                    show_label=True,
+                    avatar_images=(None, "🤖"),
+                    type='messages',
                 )
-
+                
                 with gr.Row():
-                    submit_btn = gr.Button("Submit", variant="primary", size="lg")
-                    clear_btn = gr.Button("Clear", size="lg")
-
-                response_output = gr.Textbox(
-                    label="Response",
-                    lines=10,
+                    msg = gr.Textbox(
+                        label="Your Message",
+                        placeholder="Ask about crypto, stocks, documents, or search the web...",
+                        lines=2,
+                        scale=4
+                    )
+                    submit_btn = gr.Button("Send", variant="primary", scale=1)
+                
+                with gr.Row():
+                    clear_btn = gr.Button("Clear Chat", scale=1)
+                    retry_btn = gr.Button("Retry Last", scale=1)
+                
+                gr.Markdown("""
+                **Example queries:**
+                - What's the current price of Bitcoin and Ethereum?
+                - What did Jerome Powell say in his latest speech?
+                - Show me Tesla's financial overview
+                - Search for latest AI developments
+                - What does my document say about [topic]?
+                """)
+            
+            with gr.Column(scale=1):
+                # Document Upload Section
+                gr.Markdown("### 📄 Upload Documents")
+                file_upload = gr.File(
+                    label="Upload PDF, TXT, or DOCX",
+                    file_types=[".pdf", ".txt", ".docx"],
+                    type="filepath"
+                )
+                upload_btn = gr.Button("📤 Upload to RAG", variant="secondary")
+                upload_status = gr.Textbox(
+                    label="Upload Status",
+                    lines=4,
                     interactive=False
                 )
-
-            with gr.Column(scale=1):
-                debug_output = gr.Textbox(
-                    label="System Debug Info",
-                    lines=20,
+                
+                # System Status
+                gr.Markdown("### 🔧 System Status")
+                status_box = gr.Textbox(
+                    label="Initialization Status",
+                    value="✅ All agents initialized and ready!" if app.initialized else "⏳ Initializing...",
+                    lines=2,
                     interactive=False
                 )
         
         gr.Markdown("""
         ---
-        ### System Architecture
+        ### 🏗️ System Architecture
 
-        1. **Decision Maker (Gemini)**: Analyzes your query and routes to the appropriate agent
-        2. **Crypto Agent**: Connects to CoinGecko MCP Server for real-time crypto data
-        3. **Stock Agent**: Connects to Alpha Vantage MCP Server for stock market data
-        4. **RAG Agent**: Uses ChromaDB Cloud for document storage and semantic search
-        5. **Response Generation**: Each agent uses Gemini with specialized tools
+        **ReAct Pattern Supervisor** → Analyzes queries and orchestrates agents through reasoning loops
+        
+        **Agent Workflow:**
+        1. **Think**: Supervisor reasons about what information is needed
+        2. **Act**: Calls appropriate agent(s) to gather information
+        3. **Observe**: Reviews agent responses
+        4. **Repeat**: Continues until sufficient information is gathered
+        5. **Synthesize**: Generates comprehensive final answer
+        
+        Each agent uses Gemini LLM with specialized MCP server tools for their domain.
         """)
         
-        # Define the async wrappers for Gradio
-        def process_query_sync(query):
-            """Synchronous wrapper for async query processing using shared loop."""
-            return event_loop.run_until_complete(app.process_query(query))
-
+        # Define async wrappers for Gradio
+        async def respond_stream(message, chat_history):
+            """Streaming response handler."""
+            async for update in app.process_query_streaming(message, chat_history):
+                # Append the new message in messages format
+                yield chat_history + [
+                    {"role": "user", "content": message},
+                    {"role": "assistant", "content": update}
+                ]
+        
         def upload_document_sync(file_obj, progress=gr.Progress()):
-            """Synchronous wrapper for async document upload using shared loop."""
+            """Synchronous wrapper for async document upload."""
             return event_loop.run_until_complete(app.upload_document(file_obj, progress))
-
-        def clear_conversation():
+        
+        def clear_chat():
+            """Clear chat history."""
             app.chat_history.clear()
-            return "", "", ""
-
+            return []
+        
+        def retry_last(chat_history):
+            """Retry the last message."""
+            if chat_history:
+                # Find the last user message
+                for i in range(len(chat_history) - 1, -1, -1):
+                    if chat_history[i].get("role") == "user":
+                        last_user_msg = chat_history[i].get("content", "")
+                        # Remove everything from that user message onwards
+                        return chat_history[:i], last_user_msg
+            return chat_history, ""
+        
         # Connect button actions
+        msg.submit(
+            respond_stream,
+            inputs=[msg, chatbot],
+            outputs=[chatbot]
+        ).then(
+            lambda: "",
+            outputs=[msg]
+        )
+        
+        submit_btn.click(
+            respond_stream,
+            inputs=[msg, chatbot],
+            outputs=[chatbot]
+        ).then(
+            lambda: "",
+            outputs=[msg]
+        )
+        
+        clear_btn.click(
+            clear_chat,
+            outputs=[chatbot]
+        )
+        
+        retry_btn.click(
+            retry_last,
+            inputs=[chatbot],
+            outputs=[chatbot, msg]
+        )
+        
         upload_btn.click(
-            fn=upload_document_sync,
+            upload_document_sync,
             inputs=[file_upload],
             outputs=[upload_status]
-        )
-
-        submit_btn.click(
-            fn=process_query_sync,
-            inputs=[query_input],
-            outputs=[response_output, debug_output]
-        )
-
-        clear_btn.click(
-            fn=clear_conversation,
-            inputs=[],
-            outputs=[query_input, response_output, debug_output]
-        )
-
-        # Also submit on Enter
-        query_input.submit(
-            fn=process_query_sync,
-            inputs=[query_input],
-            outputs=[response_output, debug_output]
         )
     
     return interface
@@ -307,6 +387,10 @@ def main():
     except ValueError as e:
         print(f"❌ Configuration Error: {e}")
         return
+    
+    # Initialize all agents at startup
+    print("\n⚡ Initializing all agents at startup...")
+    event_loop.run_until_complete(app.initialize())
     
     # Create and launch UI
     interface = create_ui()
