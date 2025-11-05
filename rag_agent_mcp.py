@@ -96,7 +96,7 @@ class RAGAgentMCP:
                 temperature=0.1,
                 google_api_key=config.GOOGLE_API_KEY,
             )
-            # No tools needed - we'll handle queries directly with ChromaDB client
+            
 
             print(f"  ✅ {self.name} ready!")
 
