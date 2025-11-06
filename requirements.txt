@@ -37,6 +37,9 @@ ddgs
 
 uv>=0.9.0  # Provides uvx command for Chroma MCP
 
+cloud-sql-python-connector[pg8000]>=1.7.0
+sqlalchemy>=2.0.0
+pg8000>=1.30.0
 # Optional: Enhanced embeddings
 #sentence-transformers>=2.2.0  # For better embeddings
 #openai>=1.0.0  # If using OpenAI embeddings
