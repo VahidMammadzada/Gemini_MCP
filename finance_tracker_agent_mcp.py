@@ -1,0 +1,208 @@
+"""Finance Tracker Agent using MCP Toolbox Docker server via HTTP."""
+import json
+from typing import Any, Dict, List, Optional
+
+from config import config
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from toolbox_langchain import ToolboxClient
+
+
+def _to_text(payload: Any) -> str:
+    """Convert model or tool output into a printable string."""
+    if isinstance(payload, str):
+        return payload
+    try:
+        return json.dumps(payload, ensure_ascii=False)
+    except TypeError:
+        return str(payload)
+
+
+class FinanceTrackerMCP:
+    """
+    Agent for managing personal investment portfolio using MCP Toolbox HTTP server.
+
+    Features:
+    - Portfolio Management: Track stock purchases/sales via Cloud SQL
+    - Position Analysis: View holdings, cost basis, realized gains
+    - Performance Metrics: Calculate gains/losses with current prices
+    - Database Operations: Full CRUD via MCP Toolbox Docker container
+    - Secure Access: Uses Google Cloud SQL with MCP Toolbox connector
+    """
+
+    def __init__(self):
+        self.name = "Finance Tracker (MCP)"
+        self.description = "Personal portfolio tracking and analysis using Cloud SQL via MCP Toolbox"
+        self.toolbox_client: Optional[ToolboxClient] = None
+        self.model: Optional[ChatGoogleGenerativeAI] = None
+        self.model_with_tools = None
+        self.tools: List[Any] = []
+        self.tool_map: Dict[str, Any] = {}
+        self.initialized = False
+
+    async def initialize(self) -> None:
+        """Initialize the agent with MCP Toolbox HTTP server."""
+        print(f"💼 Initializing {self.name}...")
+
+        try:
+            # Connect to MCP Toolbox HTTP server (Docker container)
+            print(f"  📡 Connecting to MCP Toolbox HTTP server...")
+            print(f"    Server URL: {config.MCP_TOOLBOX_SERVER_URL}")
+
+            # Create toolbox client and enter async context manager
+            self.toolbox_client = ToolboxClient(config.MCP_TOOLBOX_SERVER_URL)
+            # Manually enter the async context manager to keep connection alive
+            await self.toolbox_client.__aenter__()
+
+            # Load database tools from toolbox
+            print("    Loading tools from MCP Toolbox...")
+            self.tools = self.toolbox_client.load_toolset()
+
+            if not self.tools:
+                raise RuntimeError(
+                    f"No tools available from MCP Toolbox server at {config.MCP_TOOLBOX_SERVER_URL}\n"
+                    f"Make sure the Docker container is running: docker-compose up -d"
+                )
+
+            self.tool_map = {tool.name: tool for tool in self.tools}
+
+            # Initialize Gemini chat model bound to tools
+            self.model = ChatGoogleGenerativeAI(
+                model="gemini-2.5-flash",
+                temperature=0.1,
+                google_api_key=config.GOOGLE_API_KEY,
+            )
+            self.model_with_tools = self.model.bind_tools(self.tools)
+
+            print(f"  ✅ Connected to MCP Toolbox with {len(self.tools)} tools")
+            print(f"  📋 Available MCP Toolbox capabilities:")
+            print(f"    - Database queries (SELECT, INSERT, UPDATE, DELETE)")
+            print(f"    - Schema introspection (tables, columns, relationships)")
+            print(f"    - Transaction management")
+            print(f"    - Natural language to SQL conversion")
+            print(f"    Total: {len(self.tools)} tools available")
+
+            self.initialized = True
+            print(f"  ✅ {self.name} ready!")
+
+        except Exception as e:
+            import traceback
+            print(f"  ❌ Error initializing {self.name}: {e}")
+            print(f"  📋 Full error details:")
+            traceback.print_exc()
+            print(f"\n💡 Troubleshooting:")
+            print(f"   1. Make sure Docker is running")
+            print(f"   2. Start MCP Toolbox container: docker-compose up -d")
+            print(f"   3. Check container status: docker-compose ps")
+            print(f"   4. View container logs: docker-compose logs mcp-toolbox")
+            print(f"   5. Verify server is accessible: curl {config.MCP_TOOLBOX_SERVER_URL}/health")
+            raise
+
+    async def process(self, query: str, history: Optional[List[Dict[str, str]]] = None) -> Dict[str, Any]:
+        """Process a query using MCP Toolbox for Cloud SQL operations."""
+        try:
+            if not self.initialized:
+                await self.initialize()
+
+            print(f"\n💼 {self.name} processing: '{query}'")
+
+            # Build system message with portfolio context
+            system_message = """You are a Finance Tracker Agent specialized in portfolio management.
+
+You have access to a Cloud SQL PostgreSQL database through MCP Toolbox with the following schema:
+
+Tables:
+- stock_transactions: Stores all BUY/SELL transactions (symbol, transaction_type, quantity, price, transaction_date, notes)
+- portfolio_positions: Current aggregated positions (symbol, total_quantity, avg_cost_basis, total_invested, realized_gains)
+- portfolio_snapshots: Historical portfolio value tracking
+- stock_metadata: Cached stock information (company_name, sector, industry, market_cap)
+
+When users want to:
+- ADD a transaction: INSERT into stock_transactions (triggers will update portfolio_positions automatically)
+- VIEW portfolio: SELECT from portfolio_positions
+- CHECK transaction history: SELECT from stock_transactions
+- ANALYZE performance: Query portfolio_positions with calculations
+
+Always use the MCP Toolbox database tools to:
+1. Query the database for current data
+2. Insert/update records as needed
+3. Calculate metrics (gains, losses, allocations)
+4. Provide clear, actionable insights
+
+Be helpful, accurate, and provide investment insights based on their data."""
+
+            messages: List[Any] = [HumanMessage(content=system_message)]
+
+            # Add conversation history
+            if history:
+                trimmed_history = history[-10:]
+                for turn in trimmed_history:
+                    user_text = turn.get("user")
+                    if user_text:
+                        messages.append(HumanMessage(content=user_text))
+                    assistant_text = turn.get("assistant")
+                    if assistant_text:
+                        messages.append(AIMessage(content=assistant_text))
+
+            messages.append(HumanMessage(content=query))
+            final_response = ""
+
+            # Tool calling loop
+            while True:
+                if not self.model_with_tools:
+                    raise RuntimeError("Model not initialized with tools")
+
+                ai_message = await self.model_with_tools.ainvoke(messages)
+                messages.append(ai_message)
+
+                tool_calls = getattr(ai_message, "tool_calls", [])
+                if not tool_calls:
+                    final_response = _to_text(ai_message.content)
+                    break
+
+                for call in tool_calls:
+                    tool_name = call.get("name")
+                    tool_args = call.get("args", {})
+                    tool_call_id = call.get("id")
+                    print(f"  🔧 MCP Toolbox call: {tool_name}({json.dumps(tool_args, indent=2)})")
+
+                    tool = self.tool_map.get(tool_name)
+                    if not tool:
+                        tool_result = {"error": f"Tool '{tool_name}' not found"}
+                    else:
+                        tool_result = await tool.ainvoke(tool_args)
+
+                    messages.append(
+                        ToolMessage(
+                            content=_to_text(tool_result),
+                            tool_call_id=tool_call_id or "",
+                        )
+                    )
+
+            return {
+                "success": True,
+                "agent": self.name,
+                "response": final_response,
+                "query": query
+            }
+
+        except Exception as e:
+            print(f"  ❌ Error in {self.name}: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                "success": False,
+                "agent": self.name,
+                "error": str(e),
+                "query": query
+            }
+
+    async def cleanup(self) -> None:
+        """Cleanup resources."""
+        if self.toolbox_client:
+            try:
+                # Exit the async context manager
+                await self.toolbox_client.__aexit__(None, None, None)
+            except Exception as e:
+                print(f"  ⚠️  Warning during cleanup: {e}")
+        print(f"🧹 {self.name} cleaned up")
