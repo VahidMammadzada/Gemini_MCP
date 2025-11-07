@@ -1,0 +1,34 @@
+services:
+  mcp-toolbox:
+    build:
+      context: .
+      dockerfile: Dockerfile.toolbox
+    container_name: mcp-toolbox-server
+    ports:
+      - "5000:5000"
+    environment:
+      # Cloud SQL Connection Details
+      CLOUD_SQL_POSTGRES_PROJECT: ${GCP_PROJECT_ID}
+      CLOUD_SQL_POSTGRES_REGION: ${CLOUD_SQL_REGION}
+      CLOUD_SQL_POSTGRES_INSTANCE: ${CLOUD_SQL_INSTANCE}
+      CLOUD_SQL_POSTGRES_DATABASE: ${CLOUD_SQL_DB_NAME}
+      CLOUD_SQL_POSTGRES_USER: ${CLOUD_SQL_DB_USER}
+      CLOUD_SQL_POSTGRES_PASSWORD: ${CLOUD_SQL_DB_PASS}
+
+      # Google Cloud credentials path (used by Cloud SQL connector)
+      GOOGLE_APPLICATION_CREDENTIALS: /app/credentials/credentials.json
+
+    volumes:
+      # Mount Application Default Credentials to the location MCP Toolbox expects
+      # Windows users: Replace ${HOME} with ${USERPROFILE}
+      - ${APPDATA}/gcloud/application_default_credentials.json:/app/credentials/credentials.json:ro
+
+
+    restart: unless-stopped
+
+    # Note: MCP Toolbox doesn't expose a health endpoint
+    # Check if container is running with: docker-compose ps
+
+networks:
+  default:
+    name: mcp-toolbox-network
