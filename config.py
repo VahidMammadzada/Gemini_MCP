@@ -28,6 +28,19 @@ class Config:
     # Embedding Configuration
     EMBEDDING_FUNCTION: str = "default"  # Options: default, openai, cohere, jina, voyageai
 
+    # Google Cloud SQL Configuration
+    CLOUD_SQL_INSTANCE_CONNECTION_NAME: Optional[str] = None  # Format: project:region:instance
+    CLOUD_SQL_DB_USER: Optional[str] = None
+    CLOUD_SQL_DB_PASS: Optional[str] = None
+    CLOUD_SQL_DB_NAME: Optional[str] = None
+    CLOUD_SQL_PRIVATE_IP: bool = False  # Set to True to use private IP
+
+    # MCP Toolbox Configuration (for Finance Tracker Agent)
+    GCP_PROJECT_ID: Optional[str] = None  # Google Cloud Project ID
+    CLOUD_SQL_REGION: Optional[str] = None  # e.g., us-central1
+    CLOUD_SQL_INSTANCE: Optional[str] = None  # Instance name only (not full connection string)
+    MCP_TOOLBOX_SERVER_URL: str = "http://localhost:5000"  # MCP Toolbox HTTP server URL
+
     # CoinGecko MCP Server Configuration
     COINGECKO_MCP_URL: str = "https://mcp.pro-api.coingecko.com/mcp"
     COINGECKO_MCP_AUTH_URL: str = "https://mcp.pro-api.coingecko.com/auth"
@@ -65,6 +78,15 @@ class Config:
             EMBEDDING_FUNCTION=os.getenv("CHROMA_EMBEDDING_FUNCTION", "default"),
             DOCUMENTS_COLLECTION=os.getenv("DOCUMENTS_COLLECTION", "mcp-test"),
             MAX_FILE_SIZE_MB=int(os.getenv("MAX_FILE_SIZE_MB", "50")),
+            CLOUD_SQL_INSTANCE_CONNECTION_NAME=os.getenv("CLOUD_SQL_INSTANCE_CONNECTION_NAME"),
+            CLOUD_SQL_DB_USER=os.getenv("CLOUD_SQL_DB_USER"),
+            CLOUD_SQL_DB_PASS=os.getenv("CLOUD_SQL_DB_PASS"),
+            CLOUD_SQL_DB_NAME=os.getenv("CLOUD_SQL_DB_NAME", "finance_tracker"),
+            CLOUD_SQL_PRIVATE_IP=os.getenv("CLOUD_SQL_PRIVATE_IP", "False").lower() == "true",
+            GCP_PROJECT_ID=os.getenv("GCP_PROJECT_ID"),
+            CLOUD_SQL_REGION=os.getenv("CLOUD_SQL_REGION"),
+            CLOUD_SQL_INSTANCE=os.getenv("CLOUD_SQL_INSTANCE"),
+            MCP_TOOLBOX_SERVER_URL=os.getenv("MCP_TOOLBOX_SERVER_URL", "http://localhost:5000"),
         )
     
     def validate(self) -> None:
