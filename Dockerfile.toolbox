@@ -1,0 +1,47 @@
+# Dockerfile for MCP Toolbox Server
+# Runs MCP Toolbox as an HTTP server for Cloud SQL PostgreSQL access
+
+FROM debian:bookworm-slim
+
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set MCP Toolbox version
+ARG TOOLBOX_VERSION=v0.18.0
+
+# Detect architecture and download appropriate binary
+RUN ARCH=$(dpkg --print-architecture) && \
+    if [ "$ARCH" = "amd64" ]; then \
+        TOOLBOX_ARCH="amd64"; \
+    elif [ "$ARCH" = "arm64" ]; then \
+        TOOLBOX_ARCH="arm64"; \
+    else \
+        echo "Unsupported architecture: $ARCH" && exit 1; \
+    fi && \
+    curl -L "https://storage.googleapis.com/genai-toolbox/${TOOLBOX_VERSION}/linux/${TOOLBOX_ARCH}/toolbox" \
+        -o /usr/local/bin/toolbox && \
+    chmod +x /usr/local/bin/toolbox
+
+# Verify installation
+RUN toolbox --version
+
+# Create credentials directory for mounting
+RUN mkdir -p /app/credentials
+
+# Expose port for HTTP server
+EXPOSE 5000
+
+# Environment variables for Cloud SQL connection
+# These will be provided via docker-compose or docker run
+ENV CLOUD_SQL_POSTGRES_PROJECT="" \
+    CLOUD_SQL_POSTGRES_REGION="" \
+    CLOUD_SQL_POSTGRES_INSTANCE="" \
+    CLOUD_SQL_POSTGRES_DATABASE="" \
+    CLOUD_SQL_POSTGRES_USER="" \
+    CLOUD_SQL_POSTGRES_PASSWORD=""
+
+# Run MCP Toolbox as HTTP server
+CMD ["toolbox", "--prebuilt", "cloud-sql-postgres", "--port", "5000", "--address", "0.0.0.0"]
