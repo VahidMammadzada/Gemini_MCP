@@ -33,22 +33,25 @@ class ReActSupervisor:
         rag_agent=None,
         stock_agent=None,
         search_agent=None,
-        max_steps: int = 3
+        finance_tracker=None,
+        max_steps: int = 5
     ):
         """
         Initialize the ReAct supervisor.
-        
+
         Args:
             crypto_agent: Crypto agent instance
             rag_agent: RAG agent instance
             stock_agent: Stock agent instance
             search_agent: Web search agent instance (DuckDuckGo)
+            finance_tracker: Finance tracker agent instance
             max_steps: Maximum reasoning steps before forcing completion
         """
         self.crypto_agent = crypto_agent
         self.rag_agent = rag_agent
         self.stock_agent = stock_agent
         self.search_agent = search_agent
+        self.finance_tracker = finance_tracker
         self.max_steps = max_steps
         self.streaming_callback = None  # For streaming updates
         
@@ -75,6 +78,7 @@ class ReActSupervisor:
         workflow.add_node("act_rag", self.act_rag_node)
         workflow.add_node("act_stock", self.act_stock_node)
         workflow.add_node("act_search", self.act_search_node)
+        workflow.add_node("act_finance_tracker", self.act_finance_tracker_node)
         workflow.add_node("observe", self.observe_node)
         workflow.add_node("finish", self.finish_node)
         
@@ -90,15 +94,17 @@ class ReActSupervisor:
                 "rag": "act_rag",
                 "stock": "act_stock",
                 "search": "act_search",
+                "finance_tracker": "act_finance_tracker",
                 "finish": "finish",
             }
         )
-        
+
         # Actions lead to observe
         workflow.add_edge("act_crypto", "observe")
         workflow.add_edge("act_rag", "observe")
         workflow.add_edge("act_stock", "observe")
         workflow.add_edge("act_search", "observe")
+        workflow.add_edge("act_finance_tracker", "observe")
         
         # Observe leads back to think (or finish if max steps)
         workflow.add_conditional_edges(
@@ -135,6 +141,7 @@ Current Query: {state['query']}
 Available Actions:
 - CALL_CRYPTO: Get cryptocurrency market data, prices, trends
 - CALL_STOCK: Get stock market data, company information, financial data
+- CALL_FINANCE_TRACKER: Manage personal stock portfolio (add transactions, view positions, analyze performance, get portfolio news)
 - CALL_RAG: Search and retrieve information from uploaded documents
 - CALL_SEARCH: Search the web for current information, news, or general knowledge
 - FINISH: Provide final answer (use when you have sufficient information)
@@ -177,6 +184,8 @@ JUSTIFICATION: [Why this action will help]"""
             action_text = content.split("ACTION:")[1].split("\n")[0].strip().upper()
             if "CRYPTO" in action_text:
                 action = "crypto"
+            elif "FINANCE_TRACKER" in action_text or "FINANCE" in action_text:
+                action = "finance_tracker"
             elif "STOCK" in action_text:
                 action = "stock"
             elif "RAG" in action_text:
@@ -272,20 +281,38 @@ JUSTIFICATION: [Why this action will help]"""
         """Execute web search agent and return raw output."""
         if not self.search_agent:
             return {"agent_outputs": {"search_error": "Search agent not available"}}
-        
+
         print("   Calling Web Search Agent...")
         await self._emit_update({"type": "action", "agent": "search"})
-        
+
         result = await self.search_agent.process(
             state["query"],
             history=self._extract_history(state["messages"])
         )
-        
+
         agent_outputs = state.get("agent_outputs", {})
         agent_outputs["search"] = result
-        
+
         return {"agent_outputs": agent_outputs}
-    
+
+    async def act_finance_tracker_node(self, state: AgentState) -> Dict[str, Any]:
+        """Execute finance tracker agent and return raw output."""
+        if not self.finance_tracker:
+            return {"agent_outputs": {"finance_tracker_error": "Finance Tracker agent not available"}}
+
+        print("   Calling Finance Tracker Agent...")
+        await self._emit_update({"type": "action", "agent": "finance_tracker"})
+
+        result = await self.finance_tracker.process(
+            state["query"],
+            history=self._extract_history(state["messages"])
+        )
+
+        agent_outputs = state.get("agent_outputs", {})
+        agent_outputs["finance_tracker"] = result
+
+        return {"agent_outputs": agent_outputs}
+
     async def observe_node(self, state: AgentState) -> Dict[str, Any]:
         """Process and observe the latest agent output."""
         agent_outputs = state.get("agent_outputs", {})
@@ -374,6 +401,8 @@ Final Answer:"""
                 
                 if "CRYPTO" in action_line or "CALL_CRYPTO" in action_line:
                     return "crypto"
+                elif "FINANCE_TRACKER" in action_line or "CALL_FINANCE_TRACKER" in action_line or "FINANCE" in action_line:
+                    return "finance_tracker"
                 elif "STOCK" in action_line or "CALL_STOCK" in action_line:
                     return "stock"
                 elif "RAG" in action_line or "CALL_RAG" in action_line:
