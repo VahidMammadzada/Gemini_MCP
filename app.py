@@ -4,7 +4,8 @@ import gradio as gr
 from crypto_agent_mcp import CryptoAgentMCP
 from rag_agent_mcp import RAGAgentMCP
 from stock_agent_mcp import StockAgentMCP
-from search_agent_mcpp import SearchAgentMCP
+from search_agent_mcp import SearchAgentMCP
+from finance_tracker_agent_mcp import FinanceTrackerMCP
 from typing import Dict, Any, Optional, List, AsyncGenerator
 from pathlib import Path
 import os
@@ -18,6 +19,7 @@ class MultiAgentApp:
         self.rag_agent = RAGAgentMCP()
         self.stock_agent = StockAgentMCP()
         self.search_agent = SearchAgentMCP()
+        self.finance_tracker = FinanceTrackerMCP()
         self.supervisor = None
         self.chat_history: List[Dict[str, str]] = []
         self.initialized = False
@@ -32,13 +34,15 @@ class MultiAgentApp:
             await self.rag_agent.initialize()
             await self.stock_agent.initialize()
             await self.search_agent.initialize()
-            
+            await self.finance_tracker.initialize()
+
             # Initialize supervisor with agent references
             self.supervisor = ReActSupervisor(
                 crypto_agent=self.crypto_agent,
                 rag_agent=self.rag_agent,
                 stock_agent=self.stock_agent,
-                search_agent=self.search_agent
+                search_agent=self.search_agent,
+                finance_tracker=self.finance_tracker
             )
             
             self.initialized = True
@@ -204,6 +208,7 @@ class MultiAgentApp:
             await self.rag_agent.cleanup()
             await self.stock_agent.cleanup()
             await self.search_agent.cleanup()
+            await self.finance_tracker.cleanup()
             print("🧹 Cleanup complete")
         self.chat_history.clear()
 
@@ -222,9 +227,10 @@ def create_ui():
         gr.Markdown("""
         # 🤖 Multi-Agent AI Assistant with Streaming
 
-        This system has four specialized agents working together:
+        This system has five specialized agents working together:
         - **💰 Crypto Agent**: Real-time cryptocurrency data via CoinGecko MCP
         - **📈 Stock Agent**: Stock market data and company information via Alpha Vantage MCP
+        - **💼 Finance Tracker**: Personal portfolio tracking with Google Cloud SQL
         - **📚 RAG Agent**: Document Q&A powered by ChromaDB Cloud
         - **🔍 Search Agent**: Web search powered by DuckDuckGo MCP
 
@@ -258,6 +264,9 @@ def create_ui():
                 gr.Markdown("""
                 **Example queries:**
                 - What's the current price of Bitcoin and Ethereum?
+                - Add 10 shares of AAPL I bought at $150
+                - What's my current portfolio value?
+                - Show me news on my portfolio holdings
                 - What did Jerome Powell say in his latest speech?
                 - Show me Tesla's financial overview
                 - Search for latest AI developments
