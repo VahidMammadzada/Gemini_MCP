@@ -1,53 +1,101 @@
-"""Search Agent using DuckDuckGo MCP Server for web search capabilities."""
+"""Search Agent using DuckDuckGo MCP Server from Docker."""
 import asyncio
 from typing import Dict, Any, Optional, List
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
-from mcp_client_proper import DuckDuckGoMCPClient
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, ToolMessage
+from langchain_core.tools import BaseTool
+from langchain_mcp_adapters.client import MultiServerMCPClient
 from config import config
 
 
 class SearchAgentMCP:
     """
-    Agent for performing web searches using DuckDuckGo MCP Server.
-    Follows the same pattern as CryptoAgentMCP, RAGAgentMCP, and StockAgentMCP.
+    Agent for performing web searches using DuckDuckGo MCP Server from Docker.
+    Follows the same pattern as StockAgentMCP using langchain-mcp-adapters.
     """
 
     def __init__(self):
         """Initialize the DuckDuckGo search agent."""
-        self.mcp_client = DuckDuckGoMCPClient()
-        self.llm = None
+        self.name = "Search Agent (MCP)"
+        self.description = "Web search expert using DuckDuckGo MCP Server from Docker"
+        self.mcp_client: Optional[MultiServerMCPClient] = None
+        self.llm: Optional[ChatGoogleGenerativeAI] = None
+        self.llm_with_tools = None
+        self.tools: List[BaseTool] = []
+        self.tool_map: Dict[str, BaseTool] = {}
         self.initialized = False
 
     async def initialize(self):
         """Initialize the agent with MCP client and LLM."""
         if not self.initialized:
             print("🔍 Initializing Search Agent (MCP)...")
-            
-            # Connect to DuckDuckGo MCP Server
-            print("  📡 Connecting to DuckDuckGo MCP Server...")
-            success = await self.mcp_client.connect()
-            
-            if not success:
-                raise RuntimeError("Failed to connect to DuckDuckGo MCP Server")
-            
-            # Initialize LLM
-            self.llm = ChatGoogleGenerativeAI(
-                model="gemini-2.5-flash",
-                temperature=0.3,
-                google_api_key=config.GOOGLE_API_KEY,
-            )
-            
-            # Get and bind MCP tools
-            tools_for_gemini = self.mcp_client.get_tools_for_gemini()
-            
-            # Bind tools to LLM - tools_for_gemini is already in correct format
-            if tools_for_gemini:
-                self.llm = self.llm.bind_tools(tools_for_gemini)
-                print(f"  ✅ Bound {len(tools_for_gemini)} tools to LLM")
-            
-            self.initialized = True
-            print("  ✅ Search Agent (MCP) ready!")
+
+            try:
+                # Connect to DuckDuckGo MCP Server from Docker
+                print("  📡 Connecting to DuckDuckGo MCP Server (Docker)...")
+
+                connection_name = "duckduckgo"
+                connections: Dict[str, Dict[str, Any]] = {}
+
+                # DuckDuckGo MCP Server from Docker Hub uses stdio transport
+                # Command: docker run -i --rm mcp/duckduckgo
+                connections[connection_name] = {
+                    "transport": "stdio",
+                    "command": "docker",
+                    "args": [
+                        "run",
+                        "-i",           # Interactive (stdin)
+                        "--rm",         # Remove container when done
+                        "mcp/duckduckgo"  # Official Docker MCP Catalog image
+                    ],
+                }
+
+                print("    Using Docker MCP Catalog image: mcp/duckduckgo")
+
+                self.mcp_client = MultiServerMCPClient(connections)
+
+                # Load MCP tools as LangChain tools
+                print("    Loading tools from DuckDuckGo MCP Server...")
+                self.tools = await self.mcp_client.get_tools(server_name=connection_name)
+
+                if not self.tools:
+                    raise RuntimeError(
+                        "No tools available from DuckDuckGo MCP Server\n"
+                        "Make sure Docker is installed and running:\n"
+                        "  - Check: docker ps\n"
+                        "  - Test: docker run --rm hello-world"
+                    )
+
+                self.tool_map = {tool.name: tool for tool in self.tools}
+
+                # Initialize Gemini chat model bound to tools
+                self.llm = ChatGoogleGenerativeAI(
+                    model="gemini-2.5-flash",
+                    temperature=0.3,
+                    google_api_key=config.GOOGLE_API_KEY,
+                )
+                self.llm_with_tools = self.llm.bind_tools(self.tools)
+
+                print(f"  ✅ Connected to DuckDuckGo MCP Server")
+                print(f"  📋 Available tools: {len(self.tools)}")
+                for tool in self.tools:
+                    print(f"    - {tool.name}")
+                print(f"  ✅ Bound {len(self.tools)} tools to LLM")
+
+                self.initialized = True
+                print("  ✅ Search Agent (MCP) ready!")
+
+            except Exception as e:
+                import traceback
+                print(f"  ❌ Error initializing Search Agent: {e}")
+                print(f"  📋 Full error details:")
+                traceback.print_exc()
+                print(f"\n💡 Troubleshooting:")
+                print(f"   1. Make sure Docker is running: docker ps")
+                print(f"   2. Test Docker: docker run --rm hello-world")
+                print(f"   3. Pull the image manually: docker pull mcp/duckduckgo")
+                print(f"   4. Check Docker is in PATH: where docker (Windows) or which docker (Linux/Mac)")
+                raise
 
     async def process(
         self,
@@ -68,24 +116,23 @@ class SearchAgentMCP:
             if not self.initialized:
                 await self.initialize()
 
-            # Build system prompt that explicitly instructs tool usage
+            print(f"\n🔍 Search Agent processing: '{query}'")
+
+            # Build system prompt
             system_prompt = """You are a web search assistant with access to DuckDuckGo search.
 
-CRITICAL: You MUST use the 'search' tool to find information. DO NOT try to answer from memory.
+CRITICAL: You MUST use the available tools to find current information. DO NOT answer from memory.
 
 Your process:
-1. Use the 'search' tool with the user's query (limit max_results to 5)
-2. Read the search results
-3. Synthesize a clear answer with source citations
-
-Available tools:
-- search(query: str, max_results: int = 5): Search DuckDuckGo for information
+1. Use the search tool with the user's query
+2. Read the search results carefully
+3. Synthesize a clear, accurate answer with source citations
 
 Always use the search tool first before answering."""
 
             # Prepare messages
             messages = [SystemMessage(content=system_prompt)]
-            
+
             # Add conversation history if provided (limit to last 2 turns)
             if history:
                 for turn in history[-2:]:
@@ -93,110 +140,84 @@ Always use the search tool first before answering."""
                         messages.append(HumanMessage(content=turn["user"]))
                     if "assistant" in turn:
                         messages.append(AIMessage(content=turn["assistant"]))
-            
-            # Add current query with explicit instruction
-            messages.append(HumanMessage(
-                content=f"Use the search tool to find information about: {query}"
-            ))
 
-            # Get initial LLM response with tool calls
-            print(f"  📤 Invoking LLM with search query...")
-            response = await self.llm.ainvoke(messages)
-            
-            # Check for tool calls
-            tool_calls = getattr(response, 'tool_calls', None) or []
-            
-            if not tool_calls:
-                print(f"  ⚠️ No tool calls generated by LLM")
-                print(f"  Response content: {response.content[:200]}...")
-                return {
-                    "success": False,
-                    "error": "LLM did not generate tool calls",
-                    "response": f"I wasn't able to search for that information. Response: {response.content}"
-                }
-            
-            print(f"  ✅ LLM generated {len(tool_calls)} tool call(s)")
-            
-            # Process the first tool call
-            tool_call = tool_calls[0]
-            
-            # Handle both dict and object formats
-            if isinstance(tool_call, dict):
-                tool_name = tool_call.get('name', '')
-                tool_args = tool_call.get('args', {})
-            else:
-                tool_name = getattr(tool_call, 'name', '')
-                tool_args = getattr(tool_call, 'args', {})
-            
-            print(f"  🔧 Executing: {tool_name}")
-            print(f"     Arguments: {tool_args}")
-            
-            # Set reasonable max_results limit
-            if tool_name == 'search' and 'max_results' not in tool_args:
-                tool_args['max_results'] = 5
-            
-            # Call MCP tool with timeout
-            try:
-                tool_result = await asyncio.wait_for(
-                    self.mcp_client.call_tool(tool_name, tool_args),
-                    timeout=30.0
-                )
-                print(f"  ✅ Tool executed successfully")
-            except asyncio.TimeoutError:
-                print(f"  ⚠️ Tool call timed out")
-                return {
-                    "success": False,
-                    "error": "Search timed out",
-                    "response": "The search took too long. Please try again with a more specific query."
-                }
-            except Exception as e:
-                print(f"  ❌ Tool execution failed: {str(e)}")
-                return {
-                    "success": False,
-                    "error": f"Tool execution failed: {str(e)}",
-                    "response": f"I encountered an error while searching: {str(e)}"
-                }
-            
-            # Check tool result
-            if not tool_result.get("success"):
-                error = tool_result.get("error", "Unknown error")
-                print(f"  ❌ Tool returned error: {error}")
-                return {
-                    "success": False,
-                    "error": error,
-                    "response": f"Search failed: {error}"
-                }
-            
-            # Extract and truncate result
-            result_content = tool_result.get('result', 'No results')
-            if isinstance(result_content, dict):
-                result_content = str(result_content)
-            
-            if len(result_content) > 5000:
-                print(f"     Truncating result: {len(result_content)} -> 5000 chars")
-                result_content = result_content[:5000] + "\n\n[Results truncated]"
-            
-            print(f"  📄 Got search results ({len(result_content)} chars)")
-            
-            # Add tool response to conversation
-            messages.append(response)
-            messages.append(HumanMessage(
-                content=f"Search results:\n\n{result_content}\n\nBased on these results, provide a comprehensive answer to the user's query. Cite specific sources by referencing result numbers."
-            ))
-            
-            # Get final synthesized response
-            print(f"  📤 Generating final answer...")
-            final_response = await self.llm.ainvoke(messages)
-            print(f"  ✅ Final answer generated")
-            
+            # Add current query
+            messages.append(HumanMessage(content=query))
+
+            # Tool calling loop
+            max_iterations = 3
+            for iteration in range(max_iterations):
+                # Get LLM response
+                response = await self.llm_with_tools.ainvoke(messages)
+                messages.append(response)
+
+                # Check for tool calls
+                tool_calls = getattr(response, 'tool_calls', None) or []
+
+                if not tool_calls:
+                    # No more tool calls, return final response
+                    final_content = response.content if hasattr(response, 'content') else str(response)
+                    print(f"  ✅ Search complete")
+                    return {
+                        "success": True,
+                        "response": final_content
+                    }
+
+                # Execute tool calls
+                for tool_call in tool_calls:
+                    # Handle both dict and object formats
+                    if isinstance(tool_call, dict):
+                        tool_name = tool_call.get('name', '')
+                        tool_args = tool_call.get('args', {})
+                        tool_id = tool_call.get('id', '')
+                    else:
+                        tool_name = getattr(tool_call, 'name', '')
+                        tool_args = getattr(tool_call, 'args', {})
+                        tool_id = getattr(tool_call, 'id', '')
+
+                    print(f"  🔧 Executing: {tool_name}({tool_args})")
+
+                    # Get the tool
+                    tool = self.tool_map.get(tool_name)
+                    if not tool:
+                        tool_result = f"Error: Tool '{tool_name}' not found"
+                    else:
+                        try:
+                            # Call the tool with timeout
+                            tool_result = await asyncio.wait_for(
+                                tool.ainvoke(tool_args),
+                                timeout=30.0
+                            )
+                            print(f"  ✅ Tool executed successfully")
+
+                            # Truncate if too long
+                            if isinstance(tool_result, str) and len(tool_result) > 5000:
+                                tool_result = tool_result[:5000] + "\n\n[Results truncated]"
+                            elif isinstance(tool_result, dict):
+                                result_str = str(tool_result)
+                                if len(result_str) > 5000:
+                                    tool_result = result_str[:5000] + "\n\n[Results truncated]"
+
+                        except asyncio.TimeoutError:
+                            tool_result = "Error: Search timed out"
+                            print(f"  ⚠️ Tool call timed out")
+                        except Exception as e:
+                            tool_result = f"Error: {str(e)}"
+                            print(f"  ❌ Tool execution failed: {e}")
+
+                    # Add tool result to messages
+                    messages.append(
+                        ToolMessage(
+                            content=str(tool_result),
+                            tool_call_id=tool_id
+                        )
+                    )
+
+            # If we hit max iterations, return last response
+            print(f"  ⚠️ Max iterations reached")
             return {
                 "success": True,
-                "response": final_response.content,
-                "tool_calls": [{
-                    "tool": tool_name,
-                    "arguments": tool_args,
-                    "result_preview": result_content[:300] + "..." if len(result_content) > 300 else result_content
-                }]
+                "response": "Search completed but may be incomplete. Try a more specific query."
             }
 
         except Exception as e:
@@ -212,7 +233,10 @@ Always use the search tool first before answering."""
 
     async def cleanup(self):
         """Cleanup resources."""
-        if self.initialized:
-            await self.mcp_client.cleanup()
-            self.initialized = False
-            print("🧹 Search Agent cleanup complete")
+        if self.mcp_client:
+            try:
+                await self.mcp_client.cleanup()
+            except Exception as e:
+                print(f"  ⚠️ Warning during cleanup: {e}")
+        self.initialized = False
+        print("🧹 Search Agent cleanup complete")
