@@ -344,12 +344,12 @@ JUSTIFICATION: [Why this action will help]"""
         }
     
     async def finish_node(self, state: AgentState) -> Dict[str, Any]:
-        """Synthesize all agent outputs and generate final answer."""
+        """Synthesize all agent outputs and generate final answer with streaming."""
         agent_outputs = state.get("agent_outputs", {})
         reasoning_steps = state.get("reasoning_steps", [])
-        
+
         print("\nSupervisor Synthesizing Final Answer...")
-        
+
         # Build synthesis prompt
         synthesis_prompt = f"""You are synthesizing information to answer this query: {state['query']}
 
@@ -357,11 +357,11 @@ Your reasoning process:
 {chr(10).join(reasoning_steps)}
 
 Information gathered from agents:"""
-        
+
         for agent_name, output in agent_outputs.items():
             if isinstance(output, dict) and output.get("success"):
                 synthesis_prompt += f"\n\n{agent_name.upper()} Agent Response:\n{output.get('response', 'No response')}"
-        
+
         synthesis_prompt += """
 
 Now provide a comprehensive, well-structured answer that:
@@ -373,24 +373,30 @@ Now provide a comprehensive, well-structured answer that:
 
 Final Answer:"""
 
-        # Stream the final answer token-by-token
+        # Emit start of final answer
+        await self._emit_update({
+            "type": "final_start"
+        })
+
+        # Stream the final answer token by token
         final_answer = ""
         async for chunk in self.supervisor_llm.astream([
             SystemMessage(content="You are providing the final, synthesized answer."),
             HumanMessage(content=synthesis_prompt)
         ]):
-            chunk_content = chunk.content
-            final_answer += chunk_content
+            if hasattr(chunk, 'content') and chunk.content:
+                final_answer += chunk.content
+                # Emit each token/chunk as it arrives
+                await self._emit_update({
+                    "type": "final_token",
+                    "token": chunk.content,
+                    "accumulated": final_answer
+                })
 
-            # Emit each chunk as it arrives
-            await self._emit_update({
-                "type": "final_chunk",
-                "content": chunk_content
-            })
-
-        # Emit final completion signal
+        # Emit completion of final answer
         await self._emit_update({
-            "type": "final_complete"
+            "type": "final_complete",
+            "response": final_answer
         })
 
         return {
