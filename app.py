@@ -86,9 +86,10 @@ class MultiAgentApp:
                 elif role == "assistant":
                     internal_history.append({"assistant": content})
 
-            # Track message IDs for nested structure
+            # Track message IDs and action messages for checkmark updates
             message_id = 0
-            step_messages = {}  # Store step messages to update their status
+            action_message_ids = {}  # Map agent names to their action message IDs
+            final_answer_message_id = None  # Track final answer message ID
             final_answer_accumulated = ""  # Accumulate streaming final answer
 
             async for update in self.supervisor.process_streaming(message, history=internal_history):
@@ -114,7 +115,6 @@ class MultiAgentApp:
                             "status": "done"
                         }
                     )
-                    step_messages[f"thinking_{step}"] = thinking_msg
                     yield thinking_msg
 
                 elif update.get("type") == "action":
@@ -123,51 +123,81 @@ class MultiAgentApp:
                     action_content = f"Calling **{agent.upper()}** agent to gather information..."
 
                     message_id += 1
+                    action_msg_id = message_id
+                    action_message_ids[agent] = action_msg_id  # Store ID for later update
+                    
                     action_msg = ChatMessage(
                         role="assistant",
                         content=action_content,
                         metadata={
                             "title": f"🔧 Calling {agent.title()} Agent",
-                            "id": message_id,
+                            "id": action_msg_id,
                             "status": "pending"
                         }
                     )
-                    step_messages[f"action_{agent}"] = action_msg
                     yield action_msg
 
                 elif update.get("type") == "observation":
-                    # Show observation as intermediate step - mark the action as done
+                    # Update the action message with checkmark
                     agent = update.get("agent", "unknown")
+                    if agent in action_message_ids:
+                        # Yield updated action message with status="done"
+                        action_msg_id = action_message_ids[agent]
+                        updated_action_msg = ChatMessage(
+                            role="assistant",
+                            content=f"✓ Called **{agent.upper()}** agent",
+                            metadata={
+                                "title": f"🔧 Calling {agent.title()} Agent",
+                                "id": action_msg_id,
+                                "status": "done"  # ← Checkmark appears!
+                            }
+                        )
+                        yield updated_action_msg
+                    
+                    # Show observation results
                     summary = update.get("summary", "")
-                    obs_content = f"{summary}"
-
                     message_id += 1
                     obs_msg = ChatMessage(
                         role="assistant",
-                        content=obs_content,
+                        content=summary,
                         metadata={
                             "title": f"📊 {agent.title()} Agent Results",
                             "id": message_id,
                             "status": "done"
                         }
                     )
-                    step_messages[f"observation_{agent}"] = obs_msg
                     yield obs_msg
 
                 elif update.get("type") == "final_start":
-                    # Start of final answer - reset accumulator
+                    # Start of final answer - create placeholder message
                     final_answer_accumulated = ""
+                    message_id += 1
+                    final_answer_message_id = message_id
+                    # Yield initial empty final answer message
+                    yield ChatMessage(
+                        role="assistant",
+                        content="",
+                        metadata={"id": final_answer_message_id}
+                    )
 
                 elif update.get("type") == "final_token":
-                    # Stream each token of the final answer
+                    # Stream each token of the final answer - update same message
                     final_answer_accumulated = update.get("accumulated", "")
-                    # Yield the accumulated answer so far (streaming effect)
-                    yield ChatMessage(role="assistant", content=final_answer_accumulated)
+                    # Update the same final answer message
+                    yield ChatMessage(
+                        role="assistant",
+                        content=final_answer_accumulated,
+                        metadata={"id": final_answer_message_id}
+                    )
 
                 elif update.get("type") == "final_complete":
-                    # Final answer is complete - no need to yield again
-                    # The last final_token already has the complete content
-                    pass
+                    # Final answer is complete - ensure final message is properly set
+                    if final_answer_accumulated:
+                        yield ChatMessage(
+                            role="assistant",
+                            content=final_answer_accumulated,
+                            metadata={"id": final_answer_message_id}
+                        )
 
                 elif update.get("type") == "error":
                     # Show error
@@ -258,25 +288,36 @@ class MultiAgentApp:
 event_loop = asyncio.new_event_loop()
 asyncio.set_event_loop(event_loop)
 
-# Global app instance
+
+# Initialize the app
 app = MultiAgentApp()
 
+# Get or create event loop
+try:
+    event_loop = asyncio.get_running_loop()
+except RuntimeError:
+    event_loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(event_loop)
 
 def create_ui():
-    """Create and configure the Gradio Chat UI."""
-
+    """Create Gradio interface."""
+    
     with gr.Blocks(title="Multi-Agent Assistant", theme=gr.themes.Soft()) as interface:
         gr.Markdown("""
-        # 🤖 Multi-Agent AI Assistant with Streaming
-
-        This system has five specialized agents working together:
-        - **💰 Crypto Agent**: Real-time cryptocurrency data via CoinGecko MCP
-        - **📈 Stock Agent**: Stock market data and company information via Alpha Vantage MCP
-        - **💼 Finance Tracker**: Personal portfolio tracking with Google Cloud SQL
-        - **📚 RAG Agent**: Document Q&A powered by ChromaDB Cloud
-        - **🔍 Search Agent**: Web search powered by DuckDuckGo MCP
-
-        Watch the agents think and collaborate in real-time!
+        # 🤖 Multi-Agent Assistant with ReAct Supervisor
+        
+        **Available Agents:**
+        - 🪙 **Crypto Agent**: Real-time crypto prices, market data, and trends
+        - 📊 **Stock Agent**: Stock prices, company info, financial data, and market analysis
+        - 💼 **Finance Tracker**: Manage your personal stock portfolio (add transactions, track performance, get portfolio news)
+        - 📚 **RAG Agent**: Query your uploaded documents with AI
+        - 🔍 **Search Agent**: Search the web using DuckDuckGo
+        
+        **How it works:**
+        1. You ask a question
+        2. The ReAct supervisor analyzes your query and plans a strategy
+        3. It calls relevant agents to gather information
+        4. It synthesizes a comprehensive answer from all sources
         """)
         
         with gr.Row():
@@ -358,31 +399,41 @@ def create_ui():
         # Define async wrappers for Gradio
         async def respond_stream(message, chat_history):
             """Streaming response handler with intermediate steps."""
-            # Start with user message
-            new_messages = [{"role": "user", "content": message}]
-            in_final_answer = False
+            # Create the full message list once (Gradio pattern: yield same list object)
+            messages = chat_history + [{"role": "user", "content": message}]
             final_answer_index = None
+            message_id_to_index = {}  # Map message IDs to their index
 
             async for chat_msg in app.process_query_streaming(message, chat_history):
-                # Check if this is a final answer message (no metadata = final answer)
-                is_final_answer = not hasattr(chat_msg, 'metadata') or chat_msg.metadata is None
-
-                if is_final_answer:
-                    if not in_final_answer:
-                        # First token of final answer - append new message
-                        in_final_answer = True
-                        final_answer_index = len(new_messages)
-                        new_messages.append(chat_msg)
+                # Check if message has an ID (for updating existing messages)
+                msg_id = None
+                if hasattr(chat_msg, 'metadata') and chat_msg.metadata:
+                    msg_id = chat_msg.metadata.get('id')
+                
+                # Check if this is a final answer message (has ID but minimal metadata)
+                is_final_answer = msg_id and (not chat_msg.metadata.get('title'))
+                
+                if msg_id and msg_id in message_id_to_index:
+                    # Update existing message (e.g., changing status from pending to done)
+                    existing_index = message_id_to_index[msg_id]
+                    messages[existing_index] = chat_msg
+                elif is_final_answer:
+                    if final_answer_index is None:
+                        # First token of final answer - append once
+                        final_answer_index = len(messages)
+                        message_id_to_index[msg_id] = final_answer_index
+                        messages.append(chat_msg)
                     else:
-                        # Subsequent tokens - update the existing final answer message
-                        # Create a new list to ensure Gradio detects the change
-                        new_messages = new_messages[:final_answer_index] + [chat_msg]
+                        # Subsequent tokens - replace in place
+                        messages[final_answer_index] = chat_msg
                 else:
-                    # Intermediate step - append as new message
-                    new_messages.append(chat_msg)
+                    # New intermediate step message
+                    if msg_id:
+                        message_id_to_index[msg_id] = len(messages)
+                    messages.append(chat_msg)
 
-                # Yield accumulated messages (create new list to trigger Gradio update)
-                yield chat_history + new_messages
+                # Yield the SAME messages list (following Gradio streaming pattern)
+                yield messages
         
         def upload_document_sync(file_obj, progress=gr.Progress()):
             """Synchronous wrapper for async document upload."""
