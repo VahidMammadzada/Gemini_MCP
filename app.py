@@ -89,7 +89,8 @@ class MultiAgentApp:
             
             # Process through supervisor with streaming
             current_response = "🎯 **LangGraph Supervisor Processing**\n\n"
-            
+            final_answer_started = False
+
             async for update in self.supervisor.process_streaming(message, history=internal_history):
                 if update.get("type") == "thinking":
                     # Show thinking step
@@ -97,22 +98,22 @@ class MultiAgentApp:
                     thought = update.get("thought", "")
                     action = update.get("action", "")
                     justification = update.get("justification", "")
-                    
+
                     thinking_update = f"💭 **Step {step}: Thinking**\n"
                     thinking_update += f"*Thought:* {thought}\n"
                     thinking_update += f"*Action:* {action.upper()}\n"
                     thinking_update += f"*Justification:* {justification}\n\n"
-                    
+
                     current_response += thinking_update
                     yield current_response
-                
+
                 elif update.get("type") == "action":
                     # Show agent call
                     agent = update.get("agent", "unknown")
                     action_update = f"🔧 **Calling {agent.upper()} Agent...**\n\n"
                     current_response += action_update
                     yield current_response
-                
+
                 elif update.get("type") == "observation":
                     # Show observation
                     agent = update.get("agent", "unknown")
@@ -120,14 +121,28 @@ class MultiAgentApp:
                     obs_update = f"📊 **Observation from {agent.upper()}:**\n{summary}\n\n"
                     current_response += obs_update
                     yield current_response
-                
+
+                elif update.get("type") == "final_chunk":
+                    # Stream final answer chunk-by-chunk
+                    if not final_answer_started:
+                        current_response += "📝 **Final Answer:**\n\n"
+                        final_answer_started = True
+
+                    chunk = update.get("content", "")
+                    current_response += chunk
+                    yield current_response
+
+                elif update.get("type") == "final_complete":
+                    # Final answer streaming complete
+                    yield current_response
+
                 elif update.get("type") == "final":
-                    # Show final answer
+                    # Fallback for old-style final answer (non-streaming)
                     final_answer = update.get("response", "No response generated")
                     final_update = f"📝 **Final Answer:**\n\n{final_answer}"
                     current_response += final_update
                     yield current_response
-                
+
                 elif update.get("type") == "error":
                     # Show error
                     error = update.get("error", "Unknown error")

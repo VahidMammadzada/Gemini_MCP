@@ -372,20 +372,27 @@ Now provide a comprehensive, well-structured answer that:
 5. Cites sources when appropriate
 
 Final Answer:"""
-        
-        response = await self.supervisor_llm.ainvoke([
+
+        # Stream the final answer token-by-token
+        final_answer = ""
+        async for chunk in self.supervisor_llm.astream([
             SystemMessage(content="You are providing the final, synthesized answer."),
             HumanMessage(content=synthesis_prompt)
-        ])
-        
-        final_answer = response.content
-        
-        # Emit final answer
+        ]):
+            chunk_content = chunk.content
+            final_answer += chunk_content
+
+            # Emit each chunk as it arrives
+            await self._emit_update({
+                "type": "final_chunk",
+                "content": chunk_content
+            })
+
+        # Emit final completion signal
         await self._emit_update({
-            "type": "final",
-            "response": final_answer
+            "type": "final_complete"
         })
-        
+
         return {
             "final_answer": final_answer,
             "messages": [AIMessage(content=final_answer)]
