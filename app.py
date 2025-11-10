@@ -7,10 +7,9 @@ from rag_agent_mcp import RAGAgentMCP
 from stock_agent_mcp import StockAgentMCP
 from search_agent_mcp import SearchAgentMCP
 from finance_tracker_agent_mcp import FinanceTrackerMCP
-from typing import Dict, Any, Optional, List, AsyncGenerator
+from typing import Dict, List, AsyncGenerator
 from pathlib import Path
 import os
-import time
 from langgraph_supervisor import ReActSupervisor
 
 class MultiAgentApp:
@@ -284,15 +283,8 @@ class MultiAgentApp:
             print("🧹 Cleanup complete")
         self.chat_history.clear()
 
-
-event_loop = asyncio.new_event_loop()
-asyncio.set_event_loop(event_loop)
-
-
-# Initialize the app
 app = MultiAgentApp()
 
-# Get or create event loop
 try:
     event_loop = asyncio.get_running_loop()
 except RuntimeError:
@@ -357,7 +349,7 @@ def create_ui():
                 """)
             
             with gr.Column(scale=1):
-                # Document Upload Section
+                # Document Upload
                 gr.Markdown("### 📄 Upload Documents")
                 file_upload = gr.File(
                     label="Upload PDF, TXT, or DOCX",
@@ -513,7 +505,6 @@ def main():
     print("\n⚡ Initializing all agents at startup...")
     event_loop.run_until_complete(app.initialize())
 
-    # Create and launch UI
     interface = create_ui()
 
     print("\n📱 Launching Gradio interface...")
