@@ -304,12 +304,6 @@ def create_ui():
         - 💼 **Finance Tracker**: Manage your personal stock portfolio (add transactions, track performance, get portfolio news)
         - 📚 **RAG Agent**: Query your uploaded documents with AI
         - 🔍 **Search Agent**: Search the web using DuckDuckGo
-        
-        **How it works:**
-        1. You ask a question
-        2. The ReAct supervisor analyzes your query and plans a strategy
-        3. It calls relevant agents to gather information
-        4. It synthesizes a comprehensive answer from all sources
         """)
         
         with gr.Row():
@@ -317,7 +311,7 @@ def create_ui():
                 # Chat Interface
                 chatbot = gr.Chatbot(
                     label="Multi-Agent Assistant",
-                    height=400,
+                    height=700,
                     show_label=True,
                     avatar_images=(None, "🤖"),
                     type='messages',
@@ -330,11 +324,9 @@ def create_ui():
                         lines=2,
                         scale=4
                     )
-                    submit_btn = gr.Button("Send", variant="primary", scale=1)
-                
-                with gr.Row():
-                    clear_btn = gr.Button("Clear Chat", scale=1)
-                    retry_btn = gr.Button("Retry Last", scale=1)
+                    with gr.Column(scale=1):
+                        submit_btn = gr.Button("Send", variant="primary")
+                        clear_btn = gr.Button("Clear Chat")
                 
                 gr.Markdown("""
                 **Example queries:**
@@ -346,6 +338,12 @@ def create_ui():
                 - Show me Tesla's financial overview
                 - Search for latest AI developments
                 - What does my document say about [topic]?
+                            
+                 **How it works:**
+                1. You ask a question
+                2. The ReAct supervisor analyzes your query and plans a strategy
+                3. It calls relevant agents to gather information
+                4. It synthesizes a comprehensive answer from all sources
                 """)
             
             with gr.Column(scale=1):
@@ -436,17 +434,6 @@ def create_ui():
             app.chat_history.clear()
             return []
         
-        def retry_last(chat_history):
-            """Retry the last message."""
-            if chat_history:
-                # Find the last user message
-                for i in range(len(chat_history) - 1, -1, -1):
-                    if chat_history[i].get("role") == "user":
-                        last_user_msg = chat_history[i].get("content", "")
-                        # Remove everything from that user message onwards
-                        return chat_history[:i], last_user_msg
-            return chat_history, ""
-        
         # Connect button actions
         msg.submit(
             respond_stream,
@@ -469,12 +456,6 @@ def create_ui():
         clear_btn.click(
             clear_chat,
             outputs=[chatbot]
-        )
-        
-        retry_btn.click(
-            retry_last,
-            inputs=[chatbot],
-            outputs=[chatbot, msg]
         )
         
         upload_btn.click(
@@ -516,7 +497,7 @@ def main():
         interface.launch(
             server_name="0.0.0.0",
             server_port=7860,
-            share=False
+            share=True
         )
     except KeyboardInterrupt:
         print("\n\n🛑 Shutting down...")
