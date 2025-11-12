@@ -358,10 +358,6 @@ Contributions are welcome! Please:
 3. Make your changes
 4. Submit a pull request with a clear description
 
-## License
-
-[Add your license information here]
-
 ## Acknowledgments
 
 - Built with [LangChain](https://langchain.com/) and [LangGraph](https://langchain-ai.github.io/langgraph/)
