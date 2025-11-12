@@ -7,6 +7,11 @@ langchain-core>=0.3.0
 langchain-mcp-adapters>=0.1.0
 langchain-google-genai>=2.0.0
 
+# FastAPI and Server
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.12
+
 # ChromaDB and Vector Store
 chromadb>=0.5.0
 chromadb-client>=0.5.0
@@ -40,8 +45,3 @@ onnxruntime
 ddgs
 
 uv>=0.9.0  # Provides uvx command for Chroma MCP
-
-# Optional: Enhanced embeddings
-#sentence-transformers>=2.2.0  # For better embeddings
-#openai>=1.0.0  # If using OpenAI embeddings
-#cohere>=4.0.0  # If using Cohere embeddings
