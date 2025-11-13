@@ -98,12 +98,24 @@ if "chat_history" not in st.session_state:
 if "show_intermediate_steps" not in st.session_state:
     st.session_state.show_intermediate_steps = True
 
+if "processing" not in st.session_state:
+    st.session_state.processing = False
+
 # ============================================================================
 # Custom CSS
 # ============================================================================
 
 st.markdown("""
 <style>
+    /* Fixed bottom input container */
+    .stChatFloatingInputContainer {
+        position: sticky;
+        bottom: 0;
+        background-color: var(--background-color);
+        padding: 1rem 0;
+        z-index: 100;
+    }
+
     .stChatMessage {
         padding: 1rem;
         border-radius: 0.5rem;
@@ -120,9 +132,17 @@ st.markdown("""
 
     .action-step {
         background-color: #fff3cd;
-        padding: 1rem;
+        padding: 0.75rem 1rem;
         border-radius: 0.5rem;
         border-left: 3px solid #ffc107;
+        margin: 0.5rem 0;
+    }
+
+    .action-step-done {
+        background-color: #d4edda;
+        padding: 0.75rem 1rem;
+        border-radius: 0.5rem;
+        border-left: 3px solid #28a745;
         margin: 0.5rem 0;
     }
 
@@ -142,6 +162,33 @@ st.markdown("""
         color: white;
         font-size: 0.875rem;
         font-weight: 500;
+    }
+
+    /* Search references styling */
+    .search-references {
+        margin-top: 1rem;
+        padding: 0.75rem;
+        background-color: #f8f9fa;
+        border-radius: 0.5rem;
+        border-left: 3px solid #007bff;
+    }
+
+    .search-references h4 {
+        margin-top: 0;
+        font-size: 0.9rem;
+        color: #495057;
+    }
+
+    .search-references a {
+        display: block;
+        color: #007bff;
+        text-decoration: none;
+        margin: 0.25rem 0;
+        font-size: 0.85rem;
+    }
+
+    .search-references a:hover {
+        text-decoration: underline;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -189,169 +236,216 @@ with st.sidebar:
 st.title("💬 Multi-Agent Chat Assistant")
 st.markdown("Ask questions about crypto, stocks, documents, or search the web!")
 
-# Display chat history
-for message in st.session_state.messages:
-    role = message["role"]
-    content = message["content"]
+# Container for chat messages
+chat_container = st.container()
 
-    with st.chat_message(role):
-        if role == "assistant" and "metadata" in message:
-            metadata = message["metadata"]
+# Display chat history in the container
+with chat_container:
+    for message in st.session_state.messages:
+        role = message["role"]
+        content = message["content"]
 
-            # Intermediate steps
-            if metadata.get("type") == "thinking":
-                if st.session_state.show_intermediate_steps:
-                    with st.expander(f"💭 Step {metadata.get('step', '?')}: Reasoning", expanded=False):
-                        st.markdown(f"**Thought:** {metadata.get('thought', 'N/A')}")
-                        st.markdown(f"**Action:** `{metadata.get('action', 'N/A').upper()}`")
-                        st.markdown(f"**Justification:** {metadata.get('justification', 'N/A')}")
+        with st.chat_message(role):
+            if role == "assistant" and "metadata" in message:
+                metadata = message["metadata"]
 
-            elif metadata.get("type") == "action":
-                if st.session_state.show_intermediate_steps:
-                    agent = metadata.get('agent', 'unknown')
-                    st.info(f"🔧 Calling **{agent.title()}** Agent...")
+                # Intermediate steps
+                if metadata.get("type") == "thinking":
+                    if st.session_state.show_intermediate_steps:
+                        with st.expander(f"💭 Step {metadata.get('step', '?')}: Reasoning", expanded=False):
+                            st.markdown(f"**Thought:** {metadata.get('thought', 'N/A')}")
+                            st.markdown(f"**Action:** `{metadata.get('action', 'N/A').upper()}`")
+                            st.markdown(f"**Justification:** {metadata.get('justification', 'N/A')}")
 
-            elif metadata.get("type") == "observation":
-                if st.session_state.show_intermediate_steps:
-                    agent = metadata.get('agent', 'unknown')
-                    with st.expander(f"📊 {agent.title()} Agent Results", expanded=False):
-                        st.write(content)
+                elif metadata.get("type") == "action":
+                    if st.session_state.show_intermediate_steps:
+                        agent = metadata.get('agent', 'unknown')
+                        status = metadata.get('status', 'running')
+                        if status == 'done':
+                            st.success(f"✅ **{agent.title()}** Agent - Done")
+                        else:
+                            st.info(f"🔧 Calling **{agent.title()}** Agent...")
 
+                elif metadata.get("type") == "observation":
+                    if st.session_state.show_intermediate_steps:
+                        agent = metadata.get('agent', 'unknown')
+                        with st.expander(f"📊 {agent.title()} Agent Results", expanded=False):
+                            st.write(content)
+
+                else:
+                    # Regular assistant message
+                    st.markdown(content)
+
+                    # Display search references if available
+                    if metadata.get("search_references"):
+                        refs = metadata["search_references"]
+                        st.markdown("---")
+                        st.markdown("**🔗 References:**")
+                        for ref in refs:
+                            st.markdown(f"- [{ref['title']}]({ref['url']})")
             else:
-                # Regular assistant message
+                # User or regular message
                 st.markdown(content)
-        else:
-            # User or regular message
-            st.markdown(content)
 
-# Chat input and document upload in columns
-col1, col2 = st.columns([4, 1])
+# Fixed bottom container for input and file upload
+st.markdown("---")
+input_col, upload_col = st.columns([4, 1])
 
-with col1:
-    prompt = st.chat_input("Ask me anything...")
+with input_col:
+    prompt = st.chat_input("Ask me anything...", key="chat_input")
 
-with col2:
+with upload_col:
     uploaded_file = st.file_uploader(
-        "📄 Upload Document",
+        "📄",
         type=["pdf", "txt", "docx"],
         help="Upload documents to the RAG agent",
-        label_visibility="collapsed"
+        label_visibility="collapsed",
+        key="file_uploader"
     )
 
 # Handle document upload
-if uploaded_file:
+if uploaded_file and not st.session_state.processing:
     with st.spinner("Uploading document..."):
         result = upload_document(uploaded_file)
         if result.get("success"):
             st.success(f"✅ {result.get('message', 'Upload successful')}")
-            if result.get("details"):
-                with st.expander("Upload Details"):
-                    st.json(result["details"])
         else:
             st.error(f"❌ {result.get('message', 'Upload failed')}")
 
 # Handle chat input
-if prompt:
+if prompt and not st.session_state.processing:
+    st.session_state.processing = True
+
     # Add user message to chat
     st.session_state.messages.append({"role": "user", "content": prompt})
     st.session_state.chat_history.append({"role": "user", "content": prompt})
 
     # Display user message
-    with st.chat_message("user"):
-        st.markdown(prompt)
+    with chat_container:
+        with st.chat_message("user"):
+            st.markdown(prompt)
 
-    # Get response from API
-    with st.chat_message("assistant"):
-        # Create placeholder for streaming response
-        response_placeholder = st.empty()
-        thinking_container = st.container()
+        # Get response from API
+        with st.chat_message("assistant"):
+            # Create placeholders for streaming
+            response_placeholder = st.empty()
+            thinking_placeholder = st.container()
 
-        final_answer = ""
-        current_step = 0
+            final_answer = ""
+            current_step = 0
+            agent_status_placeholders = {}
+            search_references = []
 
-        try:
-            for event in stream_chat_response(prompt, st.session_state.chat_history[:-1]):
-                event_type = event.get("type", "unknown")
+            try:
+                for event in stream_chat_response(prompt, st.session_state.chat_history[:-1]):
+                    event_type = event.get("type", "unknown")
 
-                if event_type == "thinking":
-                    current_step = event.get("step", current_step + 1)
-                    if st.session_state.show_intermediate_steps:
-                        with thinking_container:
-                            with st.expander(f"💭 Step {current_step}: Reasoning", expanded=False):
-                                st.markdown(f"**Thought:** {event.get('thought', 'N/A')}")
-                                st.markdown(f"**Action:** `{event.get('action', 'N/A').upper()}`")
-                                st.markdown(f"**Justification:** {event.get('justification', 'N/A')}")
+                    if event_type == "thinking":
+                        current_step = event.get("step", current_step + 1)
+                        if st.session_state.show_intermediate_steps:
+                            with thinking_placeholder:
+                                with st.expander(f"💭 Step {current_step}: Reasoning", expanded=False):
+                                    st.markdown(f"**Thought:** {event.get('thought', 'N/A')}")
+                                    st.markdown(f"**Action:** `{event.get('action', 'N/A').upper()}`")
+                                    st.markdown(f"**Justification:** {event.get('justification', 'N/A')}")
 
-                        # Add to messages for display persistence
-                        st.session_state.messages.append({
-                            "role": "assistant",
-                            "content": "",
-                            "metadata": {
-                                "type": "thinking",
-                                "step": current_step,
-                                "thought": event.get('thought', ''),
-                                "action": event.get('action', ''),
-                                "justification": event.get('justification', '')
-                            }
-                        })
+                            st.session_state.messages.append({
+                                "role": "assistant",
+                                "content": "",
+                                "metadata": {
+                                    "type": "thinking",
+                                    "step": current_step,
+                                    "thought": event.get('thought', ''),
+                                    "action": event.get('action', ''),
+                                    "justification": event.get('justification', '')
+                                }
+                            })
 
-                elif event_type == "action":
-                    agent = event.get("agent", "unknown")
-                    if st.session_state.show_intermediate_steps:
-                        with thinking_container:
-                            st.info(f"🔧 Calling **{agent.title()}** Agent...")
+                    elif event_type == "action":
+                        agent = event.get("agent", "unknown")
+                        if st.session_state.show_intermediate_steps:
+                            with thinking_placeholder:
+                                # Create a placeholder for this agent's status
+                                agent_status_placeholders[agent] = st.empty()
+                                agent_status_placeholders[agent].info(f"🔧 Calling **{agent.title()}** Agent...")
 
-                        st.session_state.messages.append({
-                            "role": "assistant",
-                            "content": f"Calling {agent} agent...",
-                            "metadata": {"type": "action", "agent": agent}
-                        })
+                            st.session_state.messages.append({
+                                "role": "assistant",
+                                "content": f"Calling {agent} agent...",
+                                "metadata": {"type": "action", "agent": agent, "status": "running"}
+                            })
 
-                elif event_type == "observation":
-                    agent = event.get("agent", "unknown")
-                    summary = event.get("summary", "")
-                    if st.session_state.show_intermediate_steps:
-                        with thinking_container:
-                            with st.expander(f"📊 {agent.title()} Agent Results", expanded=False):
-                                st.write(summary)
+                    elif event_type == "observation":
+                        agent = event.get("agent", "unknown")
+                        summary = event.get("summary", "")
 
-                        st.session_state.messages.append({
-                            "role": "assistant",
-                            "content": summary,
-                            "metadata": {"type": "observation", "agent": agent}
-                        })
+                        # Update the agent status to done
+                        if agent in agent_status_placeholders:
+                            agent_status_placeholders[agent].success(f"✅ **{agent.title()}** Agent - Done")
 
-                elif event_type == "final_start":
-                    # Clear placeholder for final answer
-                    response_placeholder.markdown("Synthesizing final answer...")
+                        # Extract search URLs if this is the search agent
+                        if agent == "search" and event.get("search_urls"):
+                            for url_data in event.get("search_urls", []):
+                                if url_data not in search_references:
+                                    search_references.append(url_data)
 
-                elif event_type == "final_token":
-                    final_answer = event.get("accumulated", "")
-                    response_placeholder.markdown(final_answer)
+                        if st.session_state.show_intermediate_steps:
+                            with thinking_placeholder:
+                                with st.expander(f"📊 {agent.title()} Agent Results", expanded=False):
+                                    st.write(summary)
 
-                elif event_type == "final_complete":
-                    # Display complete final answer
-                    if final_answer:
+                            # Update the message to mark as done
+                            for msg in reversed(st.session_state.messages):
+                                if (msg.get("role") == "assistant" and
+                                    msg.get("metadata", {}).get("type") == "action" and
+                                    msg.get("metadata", {}).get("agent") == agent):
+                                    msg["metadata"]["status"] = "done"
+                                    break
+
+                            st.session_state.messages.append({
+                                "role": "assistant",
+                                "content": summary,
+                                "metadata": {"type": "observation", "agent": agent}
+                            })
+
+                    elif event_type == "final_start":
+                        response_placeholder.markdown("_Synthesizing final answer..._")
+
+                    elif event_type == "final_token":
+                        # Stream token by token
+                        final_answer = event.get("accumulated", "")
                         response_placeholder.markdown(final_answer)
 
-                elif event_type == "error":
-                    error_msg = event.get("error", "Unknown error")
-                    response_placeholder.error(f"❌ Error: {error_msg}")
-                    final_answer = f"Error: {error_msg}"
+                    elif event_type == "final_complete":
+                        if final_answer:
+                            response_placeholder.markdown(final_answer)
 
-        except Exception as e:
-            response_placeholder.error(f"❌ Connection Error: {str(e)}")
-            final_answer = f"Error: {str(e)}"
+                    elif event_type == "error":
+                        error_msg = event.get("error", "Unknown error")
+                        response_placeholder.error(f"❌ Error: {error_msg}")
+                        final_answer = f"Error: {error_msg}"
+
+            except Exception as e:
+                response_placeholder.error(f"❌ Connection Error: {str(e)}")
+                final_answer = f"Error: {str(e)}"
 
     # Add final answer to chat history
     if final_answer:
-        st.session_state.messages.append({
+        message_data = {
             "role": "assistant",
-            "content": final_answer
-        })
+            "content": final_answer,
+            "metadata": {}
+        }
+
+        # Add search references if available
+        if search_references:
+            message_data["metadata"]["search_references"] = search_references
+
+        st.session_state.messages.append(message_data)
         st.session_state.chat_history.append({
             "role": "assistant",
             "content": final_answer
         })
-        # Force rerun to display the final answer immediately
-        st.rerun()
+
+    st.session_state.processing = False
+    st.rerun()

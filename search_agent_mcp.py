@@ -110,7 +110,7 @@ class SearchAgentMCP:
             history: Optional conversation history
 
         Returns:
-            Dictionary with agent response
+            Dictionary with agent response and optional search_urls
         """
         try:
             if not self.initialized:
@@ -144,6 +144,9 @@ Always use the search tool first before answering."""
             # Add current query
             messages.append(HumanMessage(content=query))
 
+            # Track search URLs for references
+            search_urls = []
+
             # Tool calling loop
             max_iterations = 3
             for iteration in range(max_iterations):
@@ -158,10 +161,13 @@ Always use the search tool first before answering."""
                     # No more tool calls, return final response
                     final_content = response.content if hasattr(response, 'content') else str(response)
                     print(f"  ✅ Search complete")
-                    return {
+                    result = {
                         "success": True,
                         "response": final_content
                     }
+                    if search_urls:
+                        result["search_urls"] = search_urls
+                    return result
 
                 # Execute tool calls
                 for tool_call in tool_calls:
@@ -190,6 +196,17 @@ Always use the search tool first before answering."""
                             )
                             print(f"  ✅ Tool executed successfully")
 
+                            # Extract URLs from search results
+                            if tool_name == "search" and isinstance(tool_result, str):
+                                # Parse search results to extract URLs
+                                import re
+                                # Look for URL patterns in the result
+                                url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
+                                found_urls = re.findall(url_pattern, tool_result)
+                                for url in found_urls[:5]:  # Top 5 URLs
+                                    if url not in [u["url"] for u in search_urls]:
+                                        search_urls.append({"url": url, "title": url.split('/')[2]})
+
                             # Truncate if too long
                             if isinstance(tool_result, str) and len(tool_result) > 5000:
                                 tool_result = tool_result[:5000] + "\n\n[Results truncated]"
@@ -215,10 +232,13 @@ Always use the search tool first before answering."""
 
             # If we hit max iterations, return last response
             print(f"  ⚠️ Max iterations reached")
-            return {
+            result = {
                 "success": True,
                 "response": "Search completed but may be incomplete. Try a more specific query."
             }
+            if search_urls:
+                result["search_urls"] = search_urls
+            return result
 
         except Exception as e:
             error_msg = f"Error processing search query: {str(e)}"
