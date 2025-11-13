@@ -348,10 +348,23 @@ JUSTIFICATION: [Why this action will help]"""
 
         print("\nSupervisor Synthesizing Final Answer...")
 
-        # Build synthesis prompt
+        # Build synthesis prompt with conversation history
         synthesis_prompt = f"""You are synthesizing information to answer this query: {state['query']}
 
-Your reasoning process:
+"""
+
+        # Include conversation history for context
+        messages = state.get("messages", [])
+        if messages:
+            synthesis_prompt += "CONVERSATION HISTORY:\n"
+            for msg in messages:
+                if isinstance(msg, HumanMessage):
+                    synthesis_prompt += f"User: {msg.content}\n"
+                elif isinstance(msg, AIMessage):
+                    synthesis_prompt += f"Assistant: {msg.content}\n"
+            synthesis_prompt += "\n"
+
+        synthesis_prompt += f"""Your reasoning process:
 {chr(10).join(reasoning_steps)}
 
 Information gathered from agents:"""
@@ -363,7 +376,7 @@ Information gathered from agents:"""
         synthesis_prompt += """
 
 Now provide a comprehensive, well-structured answer that:
-1. Directly addresses the user's query
+1. Directly addresses the user's query (considering the conversation history if present)
 2. Integrates insights from all relevant agent outputs
 3. Is clear and actionable
 4. Highlights any important findings or recommendations
@@ -438,21 +451,31 @@ Final Answer:"""
         return "continue"
     
     def _build_context(self, state: AgentState) -> str:
-        """Build context string from current state."""
-        agent_outputs = state.get("agent_outputs", {})
-        
-        if not agent_outputs:
-            return "No information gathered yet."
-        
+        """Build context string from current state, including conversation history."""
         context_parts = []
-        for agent_name, output in agent_outputs.items():
-            if isinstance(output, dict) and output.get("success"):
-                response = output.get("response", "No response")
-                if len(response) > 1000:
-                    response = response[:1000] + f"... [Response continues for {len(response)} total chars]"
-                context_parts.append(f"=== {agent_name.upper()} Agent ===\n{response}")
-        
-        return "\n\n".join(context_parts) if context_parts else "No successful agent outputs yet."
+
+        # Include conversation history for context
+        messages = state.get("messages", [])
+        if messages:
+            history_text = "=== CONVERSATION HISTORY ===\n"
+            for msg in messages:
+                if isinstance(msg, HumanMessage):
+                    history_text += f"User: {msg.content}\n"
+                elif isinstance(msg, AIMessage):
+                    history_text += f"Assistant: {msg.content}\n"
+            context_parts.append(history_text)
+
+        # Include agent outputs from current query
+        agent_outputs = state.get("agent_outputs", {})
+        if agent_outputs:
+            for agent_name, output in agent_outputs.items():
+                if isinstance(output, dict) and output.get("success"):
+                    response = output.get("response", "No response")
+                    if len(response) > 1000:
+                        response = response[:1000] + f"... [Response continues for {len(response)} total chars]"
+                    context_parts.append(f"=== {agent_name.upper()} Agent ===\n{response}")
+
+        return "\n\n".join(context_parts) if context_parts else "No information gathered yet."
     
     def _extract_history(self, messages: Sequence[BaseMessage]) -> List[Dict[str, str]]:
         """Extract chat history from messages."""
