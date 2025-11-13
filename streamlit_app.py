@@ -95,9 +95,6 @@ if "messages" not in st.session_state:
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
-if "api_status" not in st.session_state:
-    st.session_state.api_status = None
-
 if "show_intermediate_steps" not in st.session_state:
     st.session_state.show_intermediate_steps = True
 
@@ -155,50 +152,6 @@ st.markdown("""
 
 with st.sidebar:
     st.title("🤖 Multi-Agent Assistant")
-    st.markdown("---")
-
-    # API Status
-    st.subheader("🔧 System Status")
-
-    if st.button("🔄 Check Connection", use_container_width=True):
-        with st.spinner("Checking API status..."):
-            st.session_state.api_status = check_api_health()
-
-    if st.session_state.api_status:
-        status = st.session_state.api_status
-        if status.get("status") == "healthy":
-            st.success("✅ API Online")
-            if status.get("agents"):
-                with st.expander("Agent Status", expanded=False):
-                    for agent, is_active in status["agents"].items():
-                        emoji = "✅" if is_active else "❌"
-                        st.write(f"{emoji} **{agent.title()}**")
-        else:
-            st.error(f"❌ API Offline: {status.get('error', 'Unknown error')}")
-    else:
-        st.info("Click 'Check Connection' to verify API status")
-
-    st.markdown("---")
-
-    # Document Upload
-    st.subheader("📄 Upload Documents")
-    uploaded_file = st.file_uploader(
-        "Upload PDF, TXT, or DOCX",
-        type=["pdf", "txt", "docx"],
-        help="Upload documents to the RAG agent for querying"
-    )
-
-    if uploaded_file and st.button("📤 Upload", use_container_width=True):
-        with st.spinner("Uploading document..."):
-            result = upload_document(uploaded_file)
-            if result.get("success"):
-                st.success(f"✅ {result.get('message', 'Upload successful')}")
-                if result.get("details"):
-                    with st.expander("Upload Details"):
-                        st.json(result["details"])
-            else:
-                st.error(f"❌ {result.get('message', 'Upload failed')}")
-
     st.markdown("---")
 
     # Settings
@@ -271,8 +224,34 @@ for message in st.session_state.messages:
             # User or regular message
             st.markdown(content)
 
-# Chat input
-if prompt := st.chat_input("Ask me anything..."):
+# Chat input and document upload in columns
+col1, col2 = st.columns([4, 1])
+
+with col1:
+    prompt = st.chat_input("Ask me anything...")
+
+with col2:
+    uploaded_file = st.file_uploader(
+        "📄 Upload Document",
+        type=["pdf", "txt", "docx"],
+        help="Upload documents to the RAG agent",
+        label_visibility="collapsed"
+    )
+
+# Handle document upload
+if uploaded_file:
+    with st.spinner("Uploading document..."):
+        result = upload_document(uploaded_file)
+        if result.get("success"):
+            st.success(f"✅ {result.get('message', 'Upload successful')}")
+            if result.get("details"):
+                with st.expander("Upload Details"):
+                    st.json(result["details"])
+        else:
+            st.error(f"❌ {result.get('message', 'Upload failed')}")
+
+# Handle chat input
+if prompt:
     # Add user message to chat
     st.session_state.messages.append({"role": "user", "content": prompt})
     st.session_state.chat_history.append({"role": "user", "content": prompt})
@@ -374,33 +353,5 @@ if prompt := st.chat_input("Ask me anything..."):
             "role": "assistant",
             "content": final_answer
         })
-
-# ============================================================================
-# Footer
-# ============================================================================
-
-st.markdown("---")
-
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    st.markdown("**Example Queries:**")
-    if st.button("💰 Bitcoin price?"):
-        st.session_state.temp_query = "What is the current price of Bitcoin?"
+        # Force rerun to display the final answer immediately
         st.rerun()
-
-with col2:
-    if st.button("📈 AAPL stock info?"):
-        st.session_state.temp_query = "Tell me about Apple stock (AAPL)"
-        st.rerun()
-
-with col3:
-    if st.button("🔍 AI news?"):
-        st.session_state.temp_query = "Search for latest AI developments"
-        st.rerun()
-
-# Handle example query clicks
-if hasattr(st.session_state, 'temp_query') and st.session_state.temp_query:
-    query = st.session_state.temp_query
-    st.session_state.temp_query = None
-    st.rerun()
