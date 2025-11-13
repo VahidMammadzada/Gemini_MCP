@@ -117,6 +117,7 @@ class SearchAgentMCP:
                 await self.initialize()
 
             print(f"\n🔍 Search Agent processing: '{query}'")
+            print(f"  📊 Available tools: {list(self.tool_map.keys())}")
 
             # Build system prompt
             system_prompt = """You are a web search assistant with access to DuckDuckGo search.
@@ -150,16 +151,20 @@ Always use the search tool first before answering."""
             # Tool calling loop
             max_iterations = 3
             for iteration in range(max_iterations):
+                print(f"\n  🔄 Iteration {iteration + 1}/{max_iterations}")
+
                 # Get LLM response
                 response = await self.llm_with_tools.ainvoke(messages)
                 messages.append(response)
 
                 # Check for tool calls
                 tool_calls = getattr(response, 'tool_calls', None) or []
+                print(f"  🔍 Tool calls found: {len(tool_calls)}")
 
                 if not tool_calls:
                     # No more tool calls, return final response
                     final_content = response.content if hasattr(response, 'content') else str(response)
+                    print(f"  💬 LLM Response (no tool calls): {final_content[:200]}...")
                     print(f"  ✅ Search complete")
                     result = {
                         "success": True,
@@ -167,6 +172,7 @@ Always use the search tool first before answering."""
                     }
                     if search_urls:
                         result["search_urls"] = search_urls
+                        print(f"  📎 Returning {len(search_urls)} URLs")
                     return result
 
                 # Execute tool calls
@@ -181,27 +187,33 @@ Always use the search tool first before answering."""
                         tool_args = getattr(tool_call, 'args', {})
                         tool_id = getattr(tool_call, 'id', '')
 
-                    print(f"  🔧 Executing: {tool_name}({tool_args})")
+                    print(f"  🔧 Executing tool: {tool_name}")
+                    print(f"     Args: {tool_args}")
+                    print(f"     Tool ID: {tool_id}")
 
                     # Get the tool
                     tool = self.tool_map.get(tool_name)
                     if not tool:
                         tool_result = f"Error: Tool '{tool_name}' not found"
+                        print(f"  ❌ Tool not found! Available: {list(self.tool_map.keys())}")
                     else:
                         try:
                             # Call the tool with timeout
+                            print(f"  ⏳ Calling MCP server...")
                             tool_result = await asyncio.wait_for(
                                 tool.ainvoke(tool_args),
                                 timeout=30.0
                             )
                             print(f"  ✅ Tool executed successfully")
+                            print(f"  📄 Result type: {type(tool_result)}")
+
+                            # Print first 300 chars of result
+                            result_preview = str(tool_result)[:300] if tool_result else "None"
+                            print(f"  📝 Result preview: {result_preview}...")
 
                             # Extract URLs from search results (safely)
                             if tool_name == "search":
                                 try:
-                                    # Print the raw result to see format
-                                    print(f"  📄 Search result type: {type(tool_result)}")
-
                                     # Convert to string if needed
                                     result_str = str(tool_result) if not isinstance(tool_result, str) else tool_result
 
@@ -210,6 +222,7 @@ Always use the search tool first before answering."""
                                     # Look for URL patterns in the result
                                     url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
                                     found_urls = re.findall(url_pattern, result_str)
+                                    print(f"  🔎 Found {len(found_urls)} URLs in result")
 
                                     # Add unique URLs
                                     for url in found_urls[:5]:  # Top 5 URLs
@@ -237,12 +250,15 @@ Always use the search tool first before answering."""
 
                         except asyncio.TimeoutError:
                             tool_result = "Error: Search timed out"
-                            print(f"  ⚠️ Tool call timed out")
+                            print(f"  ⚠️ Tool call timed out after 30 seconds")
                         except Exception as e:
                             tool_result = f"Error: {str(e)}"
                             print(f"  ❌ Tool execution failed: {e}")
+                            import traceback
+                            print(f"  📋 Traceback:\n{traceback.format_exc()}")
 
                     # Add tool result to messages
+                    print(f"  ➕ Adding tool result to conversation (length: {len(str(tool_result))})")
                     messages.append(
                         ToolMessage(
                             content=str(tool_result),
@@ -251,7 +267,7 @@ Always use the search tool first before answering."""
                     )
 
             # If we hit max iterations, return last response
-            print(f"  ⚠️ Max iterations reached")
+            print(f"  ⚠️ Max iterations ({max_iterations}) reached")
             result = {
                 "success": True,
                 "response": "Search completed but may be incomplete. Try a more specific query."
@@ -264,7 +280,8 @@ Always use the search tool first before answering."""
             error_msg = f"Error processing search query: {str(e)}"
             print(f"  ❌ {error_msg}")
             import traceback
-            print(f"  Traceback: {traceback.format_exc()}")
+            print(f"  📋 Full traceback:")
+            print(traceback.format_exc())
             return {
                 "success": False,
                 "error": error_msg,
