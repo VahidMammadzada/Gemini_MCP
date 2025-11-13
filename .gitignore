@@ -44,6 +44,9 @@ Thumbs.db
 # Gradio
 gradio_queue.db
 
+# Streamlit
+.streamlit/secrets.toml
+
 # Logs
 *.log
 
