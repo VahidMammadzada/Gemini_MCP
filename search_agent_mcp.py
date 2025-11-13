@@ -196,16 +196,36 @@ Always use the search tool first before answering."""
                             )
                             print(f"  ✅ Tool executed successfully")
 
-                            # Extract URLs from search results
-                            if tool_name == "search" and isinstance(tool_result, str):
-                                # Parse search results to extract URLs
-                                import re
-                                # Look for URL patterns in the result
-                                url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
-                                found_urls = re.findall(url_pattern, tool_result)
-                                for url in found_urls[:5]:  # Top 5 URLs
-                                    if url not in [u["url"] for u in search_urls]:
-                                        search_urls.append({"url": url, "title": url.split('/')[2]})
+                            # Extract URLs from search results (safely)
+                            if tool_name == "search":
+                                try:
+                                    # Print the raw result to see format
+                                    print(f"  📄 Search result type: {type(tool_result)}")
+
+                                    # Convert to string if needed
+                                    result_str = str(tool_result) if not isinstance(tool_result, str) else tool_result
+
+                                    # Parse search results to extract URLs
+                                    import re
+                                    # Look for URL patterns in the result
+                                    url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
+                                    found_urls = re.findall(url_pattern, result_str)
+
+                                    # Add unique URLs
+                                    for url in found_urls[:5]:  # Top 5 URLs
+                                        try:
+                                            # Extract domain as title
+                                            domain = url.split('/')[2] if len(url.split('/')) > 2 else url
+                                            url_data = {"url": url, "title": domain}
+                                            if url_data not in search_urls:
+                                                search_urls.append(url_data)
+                                                print(f"  🔗 Found URL: {url}")
+                                        except Exception as e:
+                                            print(f"  ⚠️ Error parsing URL {url}: {e}")
+                                            continue
+                                except Exception as e:
+                                    print(f"  ⚠️ Error extracting URLs: {e}")
+                                    # Continue anyway, don't break search functionality
 
                             # Truncate if too long
                             if isinstance(tool_result, str) and len(tool_result) > 5000:
