@@ -330,9 +330,9 @@ if prompt and not st.session_state.processing:
 
         # Get response from API
         with st.chat_message("assistant"):
-            # Create placeholders for streaming
-            response_placeholder = st.empty()
+            # Create placeholders for streaming (thinking steps first, then final answer)
             thinking_placeholder = st.container()
+            response_placeholder = st.empty()
 
             final_answer = ""
             current_step = 0
