@@ -338,10 +338,23 @@ if prompt and not st.session_state.processing:
             current_step = 0
             agent_status_placeholders = {}
             search_references = []
+            first_event_received = False
+            initial_status = None
+
+            # Show initial status while supervisor starts processing
+            if st.session_state.show_intermediate_steps:
+                with thinking_placeholder:
+                    initial_status = st.empty()
+                    initial_status.info("🤔 Supervisor is analyzing your query...")
 
             try:
                 for event in stream_chat_response(prompt, st.session_state.chat_history[:-1]):
                     event_type = event.get("type", "unknown")
+
+                    # Clear initial status on first event
+                    if not first_event_received and initial_status is not None:
+                        initial_status.empty()
+                        first_event_received = True
 
                     if event_type == "thinking":
                         current_step = event.get("step", current_step + 1)
