@@ -1,4 +1,3 @@
-
 """FastAPI application exposing multi-agent system via REST API."""
 import asyncio
 import json
@@ -309,15 +308,17 @@ async def stream_chat(request: ChatRequest):
             internal_history.append({"assistant": msg.content})
 
     async def event_generator():
-        """Generate SSE events."""
+        """Generate SSE events with explicit flushing."""
         try:
             async for update in multi_agent_app.process_query_streaming(
                 request.message,
                 internal_history
             ):
-                # Format as SSE
+                # Format as SSE with explicit newlines
                 event_data = json.dumps(update)
                 yield f"data: {event_data}\n\n"
+                # Force flush by yielding empty string (triggers send)
+                await asyncio.sleep(0)  # Allow event loop to process
         except Exception as e:
             error_event = json.dumps({"type": "error", "error": str(e)})
             yield f"data: {error_event}\n\n"
@@ -328,6 +329,7 @@ async def stream_chat(request: ChatRequest):
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering
         }
     )
 

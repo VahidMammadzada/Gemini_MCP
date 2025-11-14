@@ -1,3 +1,4 @@
+
 from typing import Any, Dict, List, Optional, TypedDict, Annotated, Sequence, AsyncGenerator
 import operator
 
@@ -314,29 +315,37 @@ JUSTIFICATION: [Why this action will help]"""
     async def observe_node(self, state: AgentState) -> Dict[str, Any]:
         """Process and observe the latest agent output."""
         agent_outputs = state.get("agent_outputs", {})
-        
+
         latest_output = "No new observations"
         latest_agent = "unknown"
-        
+        search_urls = None
+
         if agent_outputs:
             for agent_name, output in list(agent_outputs.items())[-1:]:
                 if isinstance(output, dict) and output.get("success"):
                     response = output.get('response', 'No response')
                     latest_output = response
                     latest_agent = agent_name
+                    # Extract search URLs if available (from search agent)
+                    if "search_urls" in output:
+                        search_urls = output["search_urls"]
                     break
-        
-        # Log summary
-        summary = latest_output[:250] + "..." if len(latest_output) > 250 else latest_output
+
+        # Log summary (increased limit since UI shows in dropdown)
+        summary = latest_output[:2000] + "..." if len(latest_output) > 2000 else latest_output
         print(f"   Observation from {latest_agent}: {summary}")
-        
-        # Emit streaming update
-        await self._emit_update({
+
+        # Emit streaming update with search URLs if available
+        update_data = {
             "type": "observation",
             "agent": latest_agent,
             "summary": summary
-        })
-        
+        }
+        if search_urls:
+            update_data["search_urls"] = search_urls
+
+        await self._emit_update(update_data)
+
         return {
             "messages": [AIMessage(content=f"Observation from {latest_agent}:\n{latest_output}")]
         }
@@ -471,8 +480,9 @@ Final Answer:"""
             for agent_name, output in agent_outputs.items():
                 if isinstance(output, dict) and output.get("success"):
                     response = output.get("response", "No response")
-                    if len(response) > 1000:
-                        response = response[:1000] + f"... [Response continues for {len(response)} total chars]"
+                    # Increased limit to provide more context to LLM
+                    if len(response) > 5000:
+                        response = response[:5000] + f"... [Response continues for {len(response)} total chars]"
                     context_parts.append(f"=== {agent_name.upper()} Agent ===\n{response}")
 
         return "\n\n".join(context_parts) if context_parts else "No information gathered yet."
