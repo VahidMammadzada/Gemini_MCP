@@ -330,8 +330,8 @@ JUSTIFICATION: [Why this action will help]"""
                         search_urls = output["search_urls"]
                     break
 
-        # Log summary
-        summary = latest_output[:250] + "..." if len(latest_output) > 250 else latest_output
+        # Log summary (increased limit since UI shows in dropdown)
+        summary = latest_output[:2000] + "..." if len(latest_output) > 2000 else latest_output
         print(f"   Observation from {latest_agent}: {summary}")
 
         # Emit streaming update with search URLs if available
@@ -479,8 +479,9 @@ Final Answer:"""
             for agent_name, output in agent_outputs.items():
                 if isinstance(output, dict) and output.get("success"):
                     response = output.get("response", "No response")
-                    if len(response) > 1000:
-                        response = response[:1000] + f"... [Response continues for {len(response)} total chars]"
+                    # Increased limit to provide more context to LLM
+                    if len(response) > 5000:
+                        response = response[:5000] + f"... [Response continues for {len(response)} total chars]"
                     context_parts.append(f"=== {agent_name.upper()} Agent ===\n{response}")
 
         return "\n\n".join(context_parts) if context_parts else "No information gathered yet."

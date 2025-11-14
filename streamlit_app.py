@@ -412,7 +412,10 @@ if prompt and not st.session_state.processing:
                             })
 
                     elif event_type == "final_start":
-                        response_placeholder.markdown("_Synthesizing final answer..._")
+                        # Display synthesis status in thinking area, not at top
+                        if st.session_state.show_intermediate_steps:
+                            with thinking_placeholder:
+                                st.info("🔄 Synthesizing final answer...")
 
                     elif event_type == "final_token":
                         # Stream token by token
