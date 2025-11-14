@@ -50,17 +50,20 @@ def stream_chat_response(message: str, history: List[Dict]) -> Dict:
         response = requests.post(
             f"{API_BASE_URL}/api/v1/chat/stream",
             json=payload,
-            headers={"Accept": "text/event-stream"},
+            headers={
+                "Accept": "text/event-stream",
+                "Cache-Control": "no-cache",
+            },
             stream=True,
             timeout=120
         )
         response.raise_for_status()
 
-        for line in response.iter_lines():
+        # Use iter_lines with smaller chunk size for faster streaming
+        for line in response.iter_lines(chunk_size=1, decode_unicode=True):
             if line:
-                line_str = line.decode('utf-8')
-                if line_str.startswith('data: '):
-                    data_str = line_str[6:]  # Remove 'data: ' prefix
+                if line.startswith('data: '):
+                    data_str = line[6:]  # Remove 'data: ' prefix
                     try:
                         event = json.loads(data_str)
                         yield event
