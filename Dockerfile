@@ -35,15 +35,34 @@ COPY . .
 # Create directory for temporary file uploads
 RUN mkdir -p /tmp/uploads && chmod 777 /tmp/uploads
 
+# Copy and make startup script executable
+RUN chmod +x /app/start.sh
+
+# Create Streamlit config directory
+RUN mkdir -p /root/.streamlit
+
+# Streamlit config for production
+RUN echo '[server]\n\
+headless = true\n\
+port = 8501\n\
+enableCORS = false\n\
+enableXsrfProtection = true\n\
+\n\
+[browser]\n\
+gatherUsageStats = false\n\
+serverAddress = "0.0.0.0"\n\
+\n\
+[theme]\n\
+base = "light"\n' > /root/.streamlit/config.toml
+
 # Expose ports
-# 7860 - Gradio UI
-# 8000 - FastAPI
-EXPOSE 7860 8000
+# 8501 - Streamlit UI
+# 8000 - FastAPI Backend
+EXPOSE 8501 8000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8000/health || curl -f http://localhost:7860 || exit 1
+# Health check - check both FastAPI and Streamlit
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
+    CMD curl -f http://localhost:8000/health && curl -f http://localhost:8501/_stcore/health || exit 1
 
-# Default command (can be overridden)
-# Use exec form to properly handle signals
-CMD ["python", "app.py"]
+# Use startup script to run both FastAPI and Streamlit
+CMD ["/app/start.sh"]

@@ -1,15 +1,15 @@
 version: '3.8'
 
 services:
-  # Main Multi-Agent Application (Gradio UI)
+  # Main Multi-Agent Application (Streamlit UI + FastAPI Backend)
   app:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: multi-agent-app
     ports:
-      - "7860:7860"  # Gradio UI
-      - "8000:8000"  # FastAPI (if needed)
+      - "8501:8501"  # Streamlit UI
+      - "8000:8000"  # FastAPI Backend
     environment:
       # API Keys
       GOOGLE_API_KEY: ${GOOGLE_API_KEY}
@@ -47,11 +47,11 @@ services:
     restart: unless-stopped
 
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7860"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
+      start_period: 90s
 
   # MCP Toolbox for Cloud SQL Access
   mcp-toolbox:

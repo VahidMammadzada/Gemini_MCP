@@ -255,7 +255,7 @@ SECURITY_GROUP=$(aws ec2 create-security-group \
 aws ec2 authorize-security-group-ingress \
     --group-id $SECURITY_GROUP \
     --protocol tcp \
-    --port 7860 \
+    --port 8501 \
     --cidr 0.0.0.0/0 \
     --region $REGION 2>/dev/null || true
 
