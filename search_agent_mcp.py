@@ -1,4 +1,4 @@
-"""Search Agent using DuckDuckGo MCP Server from Docker."""
+"""Search Agent using DuckDuckGo MCP Server via uvx."""
 import asyncio
 from typing import Dict, Any, Optional, List
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -10,14 +10,14 @@ from config import config
 
 class SearchAgentMCP:
     """
-    Agent for performing web searches using DuckDuckGo MCP Server from Docker.
+    Agent for performing web searches using DuckDuckGo MCP Server via uvx.
     Follows the same pattern as StockAgentMCP using langchain-mcp-adapters.
     """
 
     def __init__(self):
         """Initialize the DuckDuckGo search agent."""
         self.name = "Search Agent (MCP)"
-        self.description = "Web search expert using DuckDuckGo MCP Server from Docker"
+        self.description = "Web search expert using DuckDuckGo MCP Server via uvx"
         self.mcp_client: Optional[MultiServerMCPClient] = None
         self.llm: Optional[ChatGoogleGenerativeAI] = None
         self.llm_with_tools = None
@@ -31,26 +31,21 @@ class SearchAgentMCP:
             print("🔍 Initializing Search Agent (MCP)...")
 
             try:
-                # Connect to DuckDuckGo MCP Server from Docker
-                print("  📡 Connecting to DuckDuckGo MCP Server (Docker)...")
+                # Connect to DuckDuckGo MCP Server via uvx
+                print("  📡 Connecting to DuckDuckGo MCP Server...")
 
                 connection_name = "duckduckgo"
                 connections: Dict[str, Dict[str, Any]] = {}
 
-                # DuckDuckGo MCP Server from Docker Hub uses stdio transport
-                # Command: docker run -i --rm mcp/duckduckgo
+                # DuckDuckGo MCP Server via uvx (Python package)
+                # This works inside Docker containers without Docker-in-Docker
                 connections[connection_name] = {
                     "transport": "stdio",
-                    "command": "docker",
-                    "args": [
-                        "run",
-                        "-i",           # Interactive (stdin)
-                        "--rm",         # Remove container when done
-                        "mcp/duckduckgo"  # Official Docker MCP Catalog image
-                    ],
+                    "command": "uvx",
+                    "args": ["duckduckgo-mcp-server"],
                 }
 
-                print("    Using Docker MCP Catalog image: mcp/duckduckgo")
+                print("    Using DuckDuckGo MCP server via uvx...")
 
                 self.mcp_client = MultiServerMCPClient(connections)
 
@@ -61,9 +56,9 @@ class SearchAgentMCP:
                 if not self.tools:
                     raise RuntimeError(
                         "No tools available from DuckDuckGo MCP Server\n"
-                        "Make sure Docker is installed and running:\n"
-                        "  - Check: docker ps\n"
-                        "  - Test: docker run --rm hello-world"
+                        "Make sure uvx is available and duckduckgo-mcp-server can be installed:\n"
+                        "  - Check: uvx --version\n"
+                        "  - Test: uvx duckduckgo-mcp-server --help"
                     )
 
                 self.tool_map = {tool.name: tool for tool in self.tools}
