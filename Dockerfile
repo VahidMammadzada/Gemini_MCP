@@ -45,12 +45,11 @@ RUN mkdir -p /root/.streamlit
 RUN echo '[server]\n\
 headless = true\n\
 port = 8501\n\
-enableCORS = false\n\
+address = "0.0.0.0"\n\
 enableXsrfProtection = true\n\
 \n\
 [browser]\n\
 gatherUsageStats = false\n\
-serverAddress = "0.0.0.0"\n\
 \n\
 [theme]\n\
 base = "light"\n' > /root/.streamlit/config.toml
