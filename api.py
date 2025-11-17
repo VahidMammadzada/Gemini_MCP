@@ -78,16 +78,34 @@ class MultiAgentApp:
         self.initialized = False
 
     async def initialize(self):
-        """Initialize all agents and supervisor."""
+        """Initialize all agents and supervisor with parallel initialization."""
         if not self.initialized:
             print("🚀 Initializing Multi-Agent System...")
+            print("⚡ Using parallel initialization for faster startup...")
 
-            # Initialize agents first
-            await self.crypto_agent.initialize()
-            await self.rag_agent.initialize()
-            await self.stock_agent.initialize()
-            await self.search_agent.initialize()
-            await self.finance_tracker.initialize()
+            # Initialize all agents in parallel
+            init_tasks = [
+                self.crypto_agent.initialize(),
+                self.rag_agent.initialize(),
+                self.stock_agent.initialize(),
+                self.search_agent.initialize(),
+                self.finance_tracker.initialize()
+            ]
+            
+            # Execute all initializations concurrently
+            results = await asyncio.gather(*init_tasks, return_exceptions=True)
+            
+            # Check for initialization failures
+            failed_agents = []
+            agent_names = ["Crypto", "RAG", "Stock", "Search", "Finance Tracker"]
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    print(f"  ⚠️ {agent_names[i]} agent initialization failed: {result}")
+                    failed_agents.append(agent_names[i])
+            
+            if failed_agents:
+                print(f"  ⚠️ Some agents failed to initialize: {', '.join(failed_agents)}")
+                print("  ℹ️ System will continue with available agents")
 
             # Initialize supervisor with agent references
             self.supervisor = ReActSupervisor(

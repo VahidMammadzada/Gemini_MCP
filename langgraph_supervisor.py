@@ -1,8 +1,8 @@
-
 from typing import Any, Dict, List, Optional, TypedDict, Annotated, Sequence, AsyncGenerator
 import operator
 
 import asyncio
+from asyncio import Queue
 
 from langgraph.graph import StateGraph, END
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
@@ -56,7 +56,7 @@ class ReActSupervisor:
         
         # Initialize supervisor LLM with structured output
         self.supervisor_llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-pro",
+            model="gemini-2.5-flash",
             temperature=0.1,
             google_api_key=config.GOOGLE_API_KEY,
         )
@@ -399,17 +399,20 @@ Final Answer:"""
         })
 
         # Stream the final answer token by token
+        # Stream the final answer token by token
         final_answer = ""
         async for chunk in self.supervisor_llm.astream([
             SystemMessage(content="You are providing the final, synthesized answer."),
             HumanMessage(content=synthesis_prompt)
         ]):
             if hasattr(chunk, 'content') and chunk.content:
-                final_answer += chunk.content
+                # Clean unicode artifacts from Gemini streaming
+                clean_content = chunk.content.replace('∗', '*')
+                final_answer += clean_content
                 # Emit each token/chunk as it arrives
                 await self._emit_update({
                     "type": "final_token",
-                    "token": chunk.content,
+                    "token": clean_content,
                     "accumulated": final_answer
                 })
 
@@ -544,15 +547,15 @@ Final Answer:"""
         history: Optional[List[Dict[str, str]]] = None
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
-        Process query with streaming updates.
+        Process query with true async streaming using Queue.
         
         Yields update dictionaries with types: thinking, action, observation, final, error
         """
-        updates_queue = []
+        updates_queue = Queue()
         
         async def callback(update: Dict[str, Any]):
-            """Callback to capture streaming updates."""
-            updates_queue.append(update)
+            """Non-blocking callback to queue updates."""
+            await updates_queue.put(update)
         
         # Set streaming callback
         self.streaming_callback = callback
@@ -560,29 +563,40 @@ Final Answer:"""
         # Start processing in background
         result_task = asyncio.create_task(self.process(query, history))
         
-        # Yield updates as they come in
-        while not result_task.done():
-            if updates_queue:
-                update = updates_queue.pop(0)
-                yield update
-            await asyncio.sleep(0.1)
-        
-        # Yield any remaining updates
-        while updates_queue:
-            update = updates_queue.pop(0)
-            yield update
-        
-        # Get final result
+        # Stream updates efficiently without polling
         try:
+            while not result_task.done():
+                try:
+                    # Non-blocking wait with short timeout
+                    update = await asyncio.wait_for(
+                        updates_queue.get(), 
+                        timeout=0.01  # Very short timeout for responsiveness
+                    )
+                    yield update
+                except asyncio.TimeoutError:
+                    # No update available yet, continue loop
+                    continue
+                except Exception as e:
+                    print(f"Warning: Error getting update from queue: {e}")
+                    continue
+            
+            # Drain any remaining updates from the queue
+            while not updates_queue.empty():
+                try:
+                    update = await updates_queue.get()
+                    yield update
+                except Exception as e:
+                    print(f"Warning: Error draining queue: {e}")
+                    break
+            
+            # Handle final result
             result = await result_task
-            if result.get("success"):
-                # Final update already emitted by finish_node
-                pass
-            else:
+            if not result.get("success"):
                 yield {
                     "type": "error",
                     "error": result.get("error", "Unknown error")
                 }
+        
         except Exception as e:
             yield {
                 "type": "error",
