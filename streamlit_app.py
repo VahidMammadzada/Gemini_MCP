@@ -431,12 +431,13 @@ if prompt and not st.session_state.processing:
                                 st.info("🔄 Synthesizing final answer...")
 
                     elif event_type == "final_token":
-                        # Stream token by token
+                        # Stream token by token (use write() to handle incomplete markdown)
                         final_answer = event.get("accumulated", "")
-                        response_placeholder.markdown(final_answer)
+                        response_placeholder.write(final_answer)
 
                     elif event_type == "final_complete":
                         if final_answer:
+                            # Render final version with proper markdown
                             response_placeholder.markdown(final_answer)
 
                     elif event_type == "error":
