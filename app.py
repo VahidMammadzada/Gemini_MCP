@@ -1,471 +1,511 @@
-"""Streamlit UI for Multi-Agent Assistant connecting to FastAPI backend."""
-import streamlit as st
-import requests
-import json
-from typing import Dict, List, Optional
-import time
+"""Main application with Gradio Chat UI for multi-agent LLM system."""
+import asyncio
+import gradio as gr
+from gradio import ChatMessage
+from crypto_agent_mcp import CryptoAgentMCP
+from rag_agent_mcp import RAGAgentMCP
+from stock_agent_mcp import StockAgentMCP
+from search_agent_mcp import SearchAgentMCP
+from finance_tracker_agent_mcp import FinanceTrackerMCP
+from typing import Dict, List, AsyncGenerator
 from pathlib import Path
+import os
+from langgraph_supervisor import ReActSupervisor
 
-# ============================================================================
-# Configuration
-# ============================================================================
+class MultiAgentApp:
+    """Main application orchestrating LLM supervisor and agents."""
 
-# FastAPI backend URL
-API_BASE_URL = st.secrets.get("API_BASE_URL", "http://localhost:8000")
+    def __init__(self):
+        self.crypto_agent = CryptoAgentMCP()
+        self.rag_agent = RAGAgentMCP()
+        self.stock_agent = StockAgentMCP()
+        self.search_agent = SearchAgentMCP()
+        self.finance_tracker = FinanceTrackerMCP()
+        self.supervisor = None
+        self.chat_history: List[Dict[str, str]] = []
+        self.initialized = False
 
-# Page configuration
-st.set_page_config(
-    page_title="Multi-Agent Assistant",
-    page_icon="🤖",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+    async def initialize(self):
+        """Initialize all agents and supervisor."""
+        if not self.initialized:
+            print("🚀 Initializing Multi-Agent System...")
+            
+            # Initialize agents first
+            await self.crypto_agent.initialize()
+            await self.rag_agent.initialize()
+            await self.stock_agent.initialize()
+            await self.search_agent.initialize()
+            await self.finance_tracker.initialize()
 
-# ============================================================================
-# API Client Functions
-# ============================================================================
+            # Initialize supervisor with agent references
+            self.supervisor = ReActSupervisor(
+                crypto_agent=self.crypto_agent,
+                rag_agent=self.rag_agent,
+                stock_agent=self.stock_agent,
+                search_agent=self.search_agent,
+                finance_tracker=self.finance_tracker
+            )
+            
+            self.initialized = True
+            print("✅ System initialized with LangGraph supervisor!")
+            return "✅ All agents initialized and ready!"
 
-def check_api_health() -> Dict:
-    """Check if FastAPI backend is available."""
-    try:
-        response = requests.get(f"{API_BASE_URL}/health", timeout=5)
-        response.raise_for_status()
-        return response.json()
-    except Exception as e:
-        return {"status": "offline", "error": str(e)}
+    async def process_query_streaming(
+        self,
+        message: str,
+        history: List[Dict[str, str]]
+    ) -> AsyncGenerator[ChatMessage, None]:
+        """
+        Process user query with streaming updates showing intermediate steps.
 
+        Args:
+            message: User's input message
+            history: Chat history in Gradio messages format [{"role": "user/assistant", "content": "..."}]
 
-def stream_chat_response(message: str, history: List[Dict]) -> Dict:
-    """
-    Stream chat response from FastAPI using Server-Sent Events.
+        Yields:
+            ChatMessage objects with metadata for intermediate steps
+        """
+        if not message.strip():
+            yield ChatMessage(role="assistant", content="Please enter a query.")
+            return
 
-    Yields update dictionaries as they arrive.
-    """
-    payload = {
-        "message": message,
-        "history": history
-    }
+        try:
+            # Check if system is initialized
+            if not self.initialized:
+                yield ChatMessage(role="assistant", content="❌ System not initialized. Please restart the application.")
+                return
 
-    try:
-        response = requests.post(
-            f"{API_BASE_URL}/api/v1/chat/stream",
-            json=payload,
-            headers={
-                "Accept": "text/event-stream",
-                "Cache-Control": "no-cache",
-            },
-            stream=True,
-            timeout=120
-        )
-        response.raise_for_status()
+            # Convert Gradio messages format to internal format
+            internal_history = []
+            for msg in history:
+                role = msg.get("role", "")
+                content = msg.get("content", "")
+                if role == "user":
+                    internal_history.append({"user": content})
+                elif role == "assistant":
+                    internal_history.append({"assistant": content})
 
-        # Use iter_lines with smaller chunk size for faster streaming
-        for line in response.iter_lines(chunk_size=1, decode_unicode=True):
-            if line:
-                if line.startswith('data: '):
-                    data_str = line[6:]  # Remove 'data: ' prefix
-                    try:
-                        event = json.loads(data_str)
-                        yield event
-                    except json.JSONDecodeError:
-                        continue
-    except Exception as e:
-        yield {"type": "error", "error": str(e)}
+            # Track message IDs and action messages for checkmark updates
+            message_id = 0
+            action_message_ids = {}  # Map agent names to their action message IDs
+            final_answer_message_id = None  # Track final answer message ID
+            final_answer_accumulated = ""  # Accumulate streaming final answer
 
+            async for update in self.supervisor.process_streaming(message, history=internal_history):
+                if update.get("type") == "thinking":
+                    # Collect thinking step
+                    step = update.get("step", 0)
+                    thought = update.get("thought", "")
+                    action = update.get("action", "")
+                    justification = update.get("justification", "")
 
-def upload_document(file) -> Dict:
-    """Upload document to FastAPI backend."""
-    try:
-        files = {'file': (file.name, file, file.type)}
-        response = requests.post(
-            f"{API_BASE_URL}/api/v1/documents/upload",
-            files=files,
-            timeout=60
-        )
-        response.raise_for_status()
-        return response.json()
-    except Exception as e:
-        return {"success": False, "message": str(e)}
+                    step_content = f"**Thought:** {thought}\n\n"
+                    step_content += f"**Action:** {action.upper()}\n\n"
+                    step_content += f"**Justification:** {justification}"
 
+                    message_id += 1
+                    # Yield intermediate step as ChatMessage with metadata
+                    thinking_msg = ChatMessage(
+                        role="assistant",
+                        content=step_content,
+                        metadata={
+                            "title": f"💭 Step {step}: Reasoning",
+                            "id": message_id,
+                            "status": "done"
+                        }
+                    )
+                    yield thinking_msg
 
-# ============================================================================
-# Session State Initialization
-# ============================================================================
+                elif update.get("type") == "action":
+                    # Show agent call as intermediate step with pending status
+                    agent = update.get("agent", "unknown")
+                    action_content = f"Calling **{agent.upper()}** agent to gather information..."
 
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+                    message_id += 1
+                    action_msg_id = message_id
+                    action_message_ids[agent] = action_msg_id  # Store ID for later update
+                    
+                    action_msg = ChatMessage(
+                        role="assistant",
+                        content=action_content,
+                        metadata={
+                            "title": f"🔧 Calling {agent.title()} Agent",
+                            "id": action_msg_id,
+                            "status": "pending"
+                        }
+                    )
+                    yield action_msg
 
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
+                elif update.get("type") == "observation":
+                    # Update the action message with checkmark
+                    agent = update.get("agent", "unknown")
+                    if agent in action_message_ids:
+                        # Yield updated action message with status="done"
+                        action_msg_id = action_message_ids[agent]
+                        updated_action_msg = ChatMessage(
+                            role="assistant",
+                            content=f"✓ Called **{agent.upper()}** agent",
+                            metadata={
+                                "title": f"🔧 Calling {agent.title()} Agent",
+                                "id": action_msg_id,
+                                "status": "done"  # ← Checkmark appears!
+                            }
+                        )
+                        yield updated_action_msg
+                    
+                    # Show observation results
+                    summary = update.get("summary", "")
+                    message_id += 1
+                    obs_msg = ChatMessage(
+                        role="assistant",
+                        content=summary,
+                        metadata={
+                            "title": f"📊 {agent.title()} Agent Results",
+                            "id": message_id,
+                            "status": "done"
+                        }
+                    )
+                    yield obs_msg
 
-if "show_intermediate_steps" not in st.session_state:
-    st.session_state.show_intermediate_steps = True
+                elif update.get("type") == "final_start":
+                    # Start of final answer - create placeholder message
+                    final_answer_accumulated = ""
+                    message_id += 1
+                    final_answer_message_id = message_id
+                    # Yield initial empty final answer message
+                    yield ChatMessage(
+                        role="assistant",
+                        content="",
+                        metadata={"id": final_answer_message_id}
+                    )
 
-if "processing" not in st.session_state:
-    st.session_state.processing = False
+                elif update.get("type") == "final_token":
+                    # Stream each token of the final answer - update same message
+                    final_answer_accumulated = update.get("accumulated", "")
+                    # Update the same final answer message
+                    yield ChatMessage(
+                        role="assistant",
+                        content=final_answer_accumulated,
+                        metadata={"id": final_answer_message_id}
+                    )
 
-# ============================================================================
-# Custom CSS
-# ============================================================================
+                elif update.get("type") == "final_complete":
+                    # Final answer is complete - ensure final message is properly set
+                    if final_answer_accumulated:
+                        yield ChatMessage(
+                            role="assistant",
+                            content=final_answer_accumulated,
+                            metadata={"id": final_answer_message_id}
+                        )
 
-st.markdown("""
-<style>
-    /* Fixed bottom input container */
-    .stChatFloatingInputContainer {
-        position: sticky;
-        bottom: 0;
-        background-color: var(--background-color);
-        padding: 1rem 0;
-        z-index: 100;
-    }
+                elif update.get("type") == "error":
+                    # Show error
+                    error = update.get("error", "Unknown error")
+                    yield ChatMessage(
+                        role="assistant",
+                        content=f"**Error:** {error}"
+                    )
 
-    .stChatMessage {
-        padding: 1rem;
-        border-radius: 0.5rem;
-        margin-bottom: 0.5rem;
-    }
+            # Update chat history
+            self.chat_history.append({"user": message})
+            if len(self.chat_history) > 20:
+                self.chat_history = self.chat_history[-20:]
 
-    .thinking-step {
-        background-color: #f0f2f6;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        border-left: 3px solid #4CAF50;
-        margin: 0.5rem 0;
-    }
+        except Exception as e:
+            error_msg = f"❌ **Error processing query:** {str(e)}"
+            yield ChatMessage(role="assistant", content=error_msg)
 
-    .action-step {
-        background-color: #fff3cd;
-        padding: 0.75rem 1rem;
-        border-radius: 0.5rem;
-        border-left: 3px solid #ffc107;
-        margin: 0.5rem 0;
-    }
+    async def upload_document(
+        self,
+        file_obj,
+        progress=gr.Progress()
+    ) -> str:
+        """
+        Handle document upload to ChromaDB Cloud.
 
-    .action-step-done {
-        background-color: #d4edda;
-        padding: 0.75rem 1rem;
-        border-radius: 0.5rem;
-        border-left: 3px solid #28a745;
-        margin: 0.5rem 0;
-    }
+        Args:
+            file_obj: Gradio file object
+            progress: Gradio progress tracker
 
-    .observation-step {
-        background-color: #d1ecf1;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        border-left: 3px solid #17a2b8;
-        margin: 0.5rem 0;
-    }
+        Returns:
+            Status message
+        """
+        try:
+            if not self.initialized:
+                return "❌ System not initialized. Please restart the application."
 
-    .agent-badge {
-        display: inline-block;
-        padding: 0.25rem 0.5rem;
-        border-radius: 0.25rem;
-        background-color: #6c757d;
-        color: white;
-        font-size: 0.875rem;
-        font-weight: 500;
-    }
+            if file_obj is None:
+                return "❌ No file selected"
 
-    /* Search references styling */
-    .search-references {
-        margin-top: 1rem;
-        padding: 0.75rem;
-        background-color: #f8f9fa;
-        border-radius: 0.5rem;
-        border-left: 3px solid #007bff;
-    }
+            # Get file path from Gradio file object
+            file_path = file_obj.name if hasattr(file_obj, 'name') else str(file_obj)
 
-    .search-references h4 {
-        margin-top: 0;
-        font-size: 0.9rem;
-        color: #495057;
-    }
+            # Validate file exists
+            if not os.path.exists(file_path):
+                return f"❌ File not found: {file_path}"
 
-    .search-references a {
-        display: block;
-        color: #007bff;
-        text-decoration: none;
-        margin: 0.25rem 0;
-        font-size: 0.85rem;
-    }
+            # Validate file type
+            file_extension = Path(file_path).suffix.lower()
+            if file_extension not in ['.pdf', '.txt', '.docx']:
+                return f"❌ Unsupported file type: {file_extension}. Supported: PDF, TXT, DOCX"
 
-    .search-references a:hover {
-        text-decoration: underline;
-    }
-</style>
-""", unsafe_allow_html=True)
+            # Progress callback
+            def update_progress(percent, message):
+                progress(percent, desc=message)
 
-# ============================================================================
-# Sidebar
-# ============================================================================
+            # Upload to RAG agent
+            result = await self.rag_agent.add_document(
+                file_path,
+                progress_callback=update_progress
+            )
 
-with st.sidebar:
-    st.title("🤖 Multi-Agent Assistant")
-    st.markdown("---")
-
-    # Settings
-    st.subheader("⚙️ Settings")
-    st.session_state.show_intermediate_steps = st.checkbox(
-        "Show Reasoning Steps",
-        value=st.session_state.show_intermediate_steps,
-        help="Display intermediate thinking, actions, and observations"
-    )
-
-    if st.button("🗑️ Clear Chat", use_container_width=True):
-        st.session_state.messages = []
-        st.session_state.chat_history = []
-        st.rerun()
-
-    st.markdown("---")
-
-    # Information
-    st.subheader("ℹ️ Available Agents")
-    st.markdown("""
-    - 🪙 **Crypto Agent**: Cryptocurrency prices & data
-    - 📊 **Stock Agent**: Stock market information
-    - 💼 **Finance Tracker**: Portfolio management
-    - 📚 **RAG Agent**: Document Q&A
-    - 🔍 **Search Agent**: Web search
-    """)
-
-    st.markdown("---")
-    st.caption("Powered by FastAPI + Gemini 2.5 Pro")
-
-# ============================================================================
-# Main Chat Interface
-# ============================================================================
-
-st.title("💬 Multi-Agent Chat Assistant")
-st.markdown("Ask questions about crypto, stocks, documents, or search the web!")
-
-# Container for chat messages
-chat_container = st.container()
-
-# Display chat history in the container
-with chat_container:
-    for message in st.session_state.messages:
-        role = message["role"]
-        content = message["content"]
-
-        with st.chat_message(role):
-            if role == "assistant" and "metadata" in message:
-                metadata = message["metadata"]
-
-                # Intermediate steps
-                if metadata.get("type") == "thinking":
-                    if st.session_state.show_intermediate_steps:
-                        with st.expander(f"💭 Step {metadata.get('step', '?')}: Reasoning", expanded=False):
-                            st.markdown(f"**Thought:** {metadata.get('thought', 'N/A')}")
-                            st.markdown(f"**Action:** `{metadata.get('action', 'N/A').upper()}`")
-                            st.markdown(f"**Justification:** {metadata.get('justification', 'N/A')}")
-
-                elif metadata.get("type") == "action":
-                    if st.session_state.show_intermediate_steps:
-                        agent = metadata.get('agent', 'unknown')
-                        status = metadata.get('status', 'running')
-                        if status == 'done':
-                            st.success(f"✅ **{agent.title()}** Agent - Done")
-                        else:
-                            st.info(f"🔧 Calling **{agent.title()}** Agent...")
-
-                elif metadata.get("type") == "observation":
-                    if st.session_state.show_intermediate_steps:
-                        agent = metadata.get('agent', 'unknown')
-                        with st.expander(f"📊 {agent.title()} Agent Results", expanded=False):
-                            st.write(content)
-
-                else:
-                    # Regular assistant message
-                    st.markdown(content)
-
-                    # Display search references if available
-                    if metadata.get("search_references"):
-                        refs = metadata["search_references"]
-                        st.markdown("---")
-                        st.markdown("**🔗 References:**")
-                        for ref in refs:
-                            st.markdown(f"- [{ref['title']}]({ref['url']})")
+            if result.get("success"):
+                return (
+                    f"✅ Successfully uploaded {result['filename']}\n"
+                    f"📊 Type: {result['file_type']}\n"
+                    f"📦 Chunks created: {result['chunks_added']}\n"
+                    f"📚 Total documents in collection: {result['total_documents']}"
+                )
             else:
-                # User or regular message
-                st.markdown(content)
+                return f"❌ Upload failed: {result.get('error', 'Unknown error')}"
 
-# Fixed bottom container for input and file upload
-st.markdown("---")
-input_col, upload_col = st.columns([4, 1])
+        except Exception as e:
+            return f"❌ Error uploading document: {str(e)}"
 
-with input_col:
-    prompt = st.chat_input("Ask me anything...", key="chat_input")
+    async def cleanup(self):
+        """Cleanup resources."""
+        if self.initialized:
+            await self.crypto_agent.cleanup()
+            await self.rag_agent.cleanup()
+            await self.stock_agent.cleanup()
+            await self.search_agent.cleanup()
+            await self.finance_tracker.cleanup()
+            print("🧹 Cleanup complete")
+        self.chat_history.clear()
 
-with upload_col:
-    uploaded_file = st.file_uploader(
-        "📄",
-        type=["pdf", "txt", "docx"],
-        help="Upload documents to the RAG agent",
-        label_visibility="collapsed",
-        key="file_uploader"
-    )
+app = MultiAgentApp()
 
-# Handle document upload
-if uploaded_file and not st.session_state.processing:
-    with st.spinner("Uploading document..."):
-        result = upload_document(uploaded_file)
-        if result.get("success"):
-            st.success(f"✅ {result.get('message', 'Upload successful')}")
-        else:
-            st.error(f"❌ {result.get('message', 'Upload failed')}")
+try:
+    event_loop = asyncio.get_running_loop()
+except RuntimeError:
+    event_loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(event_loop)
 
-# Handle chat input
-if prompt and not st.session_state.processing:
-    st.session_state.processing = True
+def create_ui():
+    """Create Gradio interface."""
+    
+    with gr.Blocks(title="Multi-Agent Assistant", theme=gr.themes.Soft()) as interface:
+        gr.Markdown("""
+        # 🤖 Multi-Agent Assistant with ReAct Supervisor
+        
+        **Available Agents:**
+        - 🪙 **Crypto Agent**: Real-time crypto prices, market data, and trends
+        - 📊 **Stock Agent**: Stock prices, company info, financial data, and market analysis
+        - 💼 **Finance Tracker**: Manage your personal stock portfolio (add transactions, track performance, get portfolio news)
+        - 📚 **RAG Agent**: Query your uploaded documents with AI
+        - 🔍 **Search Agent**: Search the web using DuckDuckGo
+        """)
+        
+        with gr.Row():
+            with gr.Column(scale=3):
+                # Chat Interface
+                chatbot = gr.Chatbot(
+                    label="Multi-Agent Assistant",
+                    height=700,
+                    show_label=True,
+                    avatar_images=(None, "🤖"),
+                    type='messages',
+                )
+                
+                with gr.Row():
+                    msg = gr.Textbox(
+                        label="Your Message",
+                        placeholder="Ask about crypto, stocks, documents, or search the web...",
+                        lines=2,
+                        scale=4
+                    )
+                    with gr.Column(scale=1):
+                        submit_btn = gr.Button("Send", variant="primary")
+                        clear_btn = gr.Button("Clear Chat")
+                
+                gr.Markdown("""
+                **Example queries:**
+                - What's the current price of Bitcoin and Ethereum?
+                - Add 10 shares of AAPL I bought at $150
+                - What's my current portfolio value?
+                - Show me news on my portfolio holdings
+                - What did Jerome Powell say in his latest speech?
+                - Show me Tesla's financial overview
+                - Search for latest AI developments
+                - What does my document say about [topic]?
+                            
+                 **How it works:**
+                1. You ask a question
+                2. The ReAct supervisor analyzes your query and plans a strategy
+                3. It calls relevant agents to gather information
+                4. It synthesizes a comprehensive answer from all sources
+                """)
+            
+            with gr.Column(scale=1):
+                # Document Upload
+                gr.Markdown("### 📄 Upload Documents")
+                file_upload = gr.File(
+                    label="Upload PDF, TXT, or DOCX",
+                    file_types=[".pdf", ".txt", ".docx"],
+                    type="filepath"
+                )
+                upload_btn = gr.Button("📤 Upload to RAG", variant="secondary")
+                upload_status = gr.Textbox(
+                    label="Upload Status",
+                    lines=4,
+                    interactive=False
+                )
+                
+                # System Status
+                gr.Markdown("### 🔧 System Status")
+                status_box = gr.Textbox(
+                    label="Initialization Status",
+                    value="✅ All agents initialized and ready!" if app.initialized else "⏳ Initializing...",
+                    lines=2,
+                    interactive=False
+                )
+        
+        gr.Markdown("""
+        ---
+        ### 🏗️ System Architecture
 
-    # Add user message to chat
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    st.session_state.chat_history.append({"role": "user", "content": prompt})
+        **ReAct Pattern Supervisor** → Analyzes queries and orchestrates agents through reasoning loops
+        
+        **Agent Workflow:**
+        1. **Think**: Supervisor reasons about what information is needed
+        2. **Act**: Calls appropriate agent(s) to gather information
+        3. **Observe**: Reviews agent responses
+        4. **Repeat**: Continues until sufficient information is gathered
+        5. **Synthesize**: Generates comprehensive final answer
+        
+        Each agent uses Gemini LLM with specialized MCP server tools for their domain.
+        """)
+        
+        # Define async wrappers for Gradio
+        async def respond_stream(message, chat_history):
+            """Streaming response handler with intermediate steps."""
+            # Create the full message list once (Gradio pattern: yield same list object)
+            messages = chat_history + [{"role": "user", "content": message}]
+            final_answer_index = None
+            message_id_to_index = {}  # Map message IDs to their index
 
-    # Display user message
-    with chat_container:
-        with st.chat_message("user"):
-            st.markdown(prompt)
+            async for chat_msg in app.process_query_streaming(message, chat_history):
+                # Check if message has an ID (for updating existing messages)
+                msg_id = None
+                if hasattr(chat_msg, 'metadata') and chat_msg.metadata:
+                    msg_id = chat_msg.metadata.get('id')
+                
+                # Check if this is a final answer message (has ID but minimal metadata)
+                is_final_answer = msg_id and (not chat_msg.metadata.get('title'))
+                
+                if msg_id and msg_id in message_id_to_index:
+                    # Update existing message (e.g., changing status from pending to done)
+                    existing_index = message_id_to_index[msg_id]
+                    messages[existing_index] = chat_msg
+                elif is_final_answer:
+                    if final_answer_index is None:
+                        # First token of final answer - append once
+                        final_answer_index = len(messages)
+                        message_id_to_index[msg_id] = final_answer_index
+                        messages.append(chat_msg)
+                    else:
+                        # Subsequent tokens - replace in place
+                        messages[final_answer_index] = chat_msg
+                else:
+                    # New intermediate step message
+                    if msg_id:
+                        message_id_to_index[msg_id] = len(messages)
+                    messages.append(chat_msg)
 
-        # Get response from API
-        with st.chat_message("assistant"):
-            # Create placeholders for streaming (thinking steps first, then final answer)
-            thinking_placeholder = st.container()
-            response_placeholder = st.empty()
+                # Yield the SAME messages list (following Gradio streaming pattern)
+                yield messages
+        
+        def upload_document_sync(file_obj, progress=gr.Progress()):
+            """Synchronous wrapper for async document upload."""
+            return event_loop.run_until_complete(app.upload_document(file_obj, progress))
+        
+        def clear_chat():
+            """Clear chat history."""
+            app.chat_history.clear()
+            return []
+        
+        # Connect button actions
+        msg.submit(
+            respond_stream,
+            inputs=[msg, chatbot],
+            outputs=[chatbot]
+        ).then(
+            lambda: "",
+            outputs=[msg]
+        )
+        
+        submit_btn.click(
+            respond_stream,
+            inputs=[msg, chatbot],
+            outputs=[chatbot]
+        ).then(
+            lambda: "",
+            outputs=[msg]
+        )
+        
+        clear_btn.click(
+            clear_chat,
+            outputs=[chatbot]
+        )
+        
+        upload_btn.click(
+            upload_document_sync,
+            inputs=[file_upload],
+            outputs=[upload_status]
+        )
 
-            final_answer = ""
-            current_step = 0
-            agent_status_placeholders = {}
-            search_references = []
-            first_event_received = False
-            initial_status = None
+    return interface
 
-            # Show initial status while supervisor starts processing
-            if st.session_state.show_intermediate_steps:
-                with thinking_placeholder:
-                    initial_status = st.empty()
-                    initial_status.info("🤔 Supervisor is analyzing your query...")
 
-            try:
-                for event in stream_chat_response(prompt, st.session_state.chat_history[:-1]):
-                    event_type = event.get("type", "unknown")
+def main():
+    """Main entry point."""
+    print("=" * 60)
+    print("🚀 Starting Multi-Agent Assistant")
+    print("=" * 60)
 
-                    # Clear initial status on first event
-                    if not first_event_received and initial_status is not None:
-                        initial_status.empty()
-                        first_event_received = True
+    # Validate configuration
+    try:
+        from config import config
+        config.validate()
+        print("✅ Configuration validated")
+    except ValueError as e:
+        print(f"❌ Configuration Error: {e}")
+        return
 
-                    if event_type == "thinking":
-                        current_step = event.get("step", current_step + 1)
-                        if st.session_state.show_intermediate_steps:
-                            with thinking_placeholder:
-                                with st.expander(f"💭 Step {current_step}: Reasoning", expanded=False):
-                                    st.markdown(f"**Thought:** {event.get('thought', 'N/A')}")
-                                    st.markdown(f"**Action:** `{event.get('action', 'N/A').upper()}`")
-                                    st.markdown(f"**Justification:** {event.get('justification', 'N/A')}")
+    # Initialize all agents at startup
+    print("\n⚡ Initializing all agents at startup...")
+    event_loop.run_until_complete(app.initialize())
 
-                            st.session_state.messages.append({
-                                "role": "assistant",
-                                "content": "",
-                                "metadata": {
-                                    "type": "thinking",
-                                    "step": current_step,
-                                    "thought": event.get('thought', ''),
-                                    "action": event.get('action', ''),
-                                    "justification": event.get('justification', '')
-                                }
-                            })
+    interface = create_ui()
 
-                    elif event_type == "action":
-                        agent = event.get("agent", "unknown")
-                        if st.session_state.show_intermediate_steps:
-                            with thinking_placeholder:
-                                # Create a placeholder for this agent's status
-                                agent_status_placeholders[agent] = st.empty()
-                                agent_status_placeholders[agent].info(f"🔧 Calling **{agent.title()}** Agent...")
+    print("\n📱 Launching Gradio interface...")
+    print("🌐 Access the app at: http://localhost:7860")
+    print("\nPress Ctrl+C to stop the server")
+    print("=" * 60)
 
-                            st.session_state.messages.append({
-                                "role": "assistant",
-                                "content": f"Calling {agent} agent...",
-                                "metadata": {"type": "action", "agent": agent, "status": "running"}
-                            })
+    try:
+        interface.launch(
+            server_name="0.0.0.0",
+            server_port=7860,
+            share=True
+        )
+    except KeyboardInterrupt:
+        print("\n\n🛑 Shutting down...")
+        # Cleanup
+        event_loop.run_until_complete(app.cleanup())
+        event_loop.close()
+        print("👋 Goodbye!")
 
-                    elif event_type == "observation":
-                        agent = event.get("agent", "unknown")
-                        summary = event.get("summary", "")
 
-                        # Update the agent status to done
-                        if agent in agent_status_placeholders:
-                            agent_status_placeholders[agent].success(f"✅ **{agent.title()}** Agent - Done")
-
-                        # Extract search URLs if this is the search agent
-                        if agent == "search" and event.get("search_urls"):
-                            for url_data in event.get("search_urls", []):
-                                if url_data not in search_references:
-                                    search_references.append(url_data)
-
-                        if st.session_state.show_intermediate_steps:
-                            with thinking_placeholder:
-                                with st.expander(f"📊 {agent.title()} Agent Results", expanded=False):
-                                    st.write(summary)
-
-                            # Update the message to mark as done
-                            for msg in reversed(st.session_state.messages):
-                                if (msg.get("role") == "assistant" and
-                                    msg.get("metadata", {}).get("type") == "action" and
-                                    msg.get("metadata", {}).get("agent") == agent):
-                                    msg["metadata"]["status"] = "done"
-                                    break
-
-                            st.session_state.messages.append({
-                                "role": "assistant",
-                                "content": summary,
-                                "metadata": {"type": "observation", "agent": agent}
-                            })
-
-                    elif event_type == "final_start":
-                        # Display synthesis status in thinking area, not at top
-                        if st.session_state.show_intermediate_steps:
-                            with thinking_placeholder:
-                                st.info("🔄 Synthesizing final answer...")
-
-                    elif event_type == "final_token":
-                        # Stream token by token (use write() to handle incomplete markdown)
-                        final_answer = event.get("accumulated", "")
-                        response_placeholder.write(final_answer)
-
-                    elif event_type == "final_complete":
-                        if final_answer:
-                            # Render final version with proper markdown
-                            response_placeholder.markdown(final_answer)
-
-                    elif event_type == "error":
-                        error_msg = event.get("error", "Unknown error")
-                        response_placeholder.error(f"❌ Error: {error_msg}")
-                        final_answer = f"Error: {error_msg}"
-
-            except Exception as e:
-                response_placeholder.error(f"❌ Connection Error: {str(e)}")
-                final_answer = f"Error: {str(e)}"
-
-    # Add final answer to chat history
-    if final_answer:
-        message_data = {
-            "role": "assistant",
-            "content": final_answer,
-            "metadata": {}
-        }
-
-        # Add search references if available
-        if search_references:
-            message_data["metadata"]["search_references"] = search_references
-
-        st.session_state.messages.append(message_data)
-        st.session_state.chat_history.append({
-            "role": "assistant",
-            "content": final_answer
-        })
-
-    st.session_state.processing = False
-    st.rerun()
+if __name__ == "__main__":
+    main()
