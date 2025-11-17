@@ -1,4 +1,59 @@
+version: '3.8'
+
 services:
+  # Main Multi-Agent Application (Streamlit UI + FastAPI Backend)
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: multi-agent-app
+    ports:
+      - "8501:8501"  # Streamlit UI
+      - "8000:8000"  # FastAPI Backend
+    environment:
+      # API Keys
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      COINGECKO_API_KEY: ${COINGECKO_API_KEY}
+      ALPHA_VANTAGE_API_KEY: ${ALPHA_VANTAGE_API_KEY}
+
+      # ChromaDB Cloud Configuration
+      CHROMA_API_KEY: ${CHROMA_API_KEY}
+      CHROMA_TENANT: ${CHROMA_TENANT}
+      CHROMA_DATABASE: ${CHROMA_DATABASE}
+      CHROMA_CLOUD_HOST: ${CHROMA_CLOUD_HOST:-api.trychroma.com}
+      CHROMA_EMBEDDING_FUNCTION: ${CHROMA_EMBEDDING_FUNCTION:-default}
+      DOCUMENTS_COLLECTION: ${DOCUMENTS_COLLECTION:-mcp-test}
+
+      # Google Cloud SQL Configuration
+      GCP_PROJECT_ID: ${GCP_PROJECT_ID}
+      CLOUD_SQL_REGION: ${CLOUD_SQL_REGION}
+      CLOUD_SQL_INSTANCE: ${CLOUD_SQL_INSTANCE}
+      CLOUD_SQL_DB_NAME: ${CLOUD_SQL_DB_NAME:-finance_tracker}
+      CLOUD_SQL_DB_USER: ${CLOUD_SQL_DB_USER}
+      CLOUD_SQL_DB_PASS: ${CLOUD_SQL_DB_PASS}
+
+      # MCP Toolbox connection (internal network)
+      MCP_TOOLBOX_SERVER_URL: http://mcp-toolbox:5000
+
+      # UI Configuration
+      MAX_FILE_SIZE_MB: ${MAX_FILE_SIZE_MB:-50}
+
+    depends_on:
+      - mcp-toolbox
+
+    networks:
+      - mcp-network
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+
+  # MCP Toolbox for Cloud SQL Access
   mcp-toolbox:
     build:
       context: .
@@ -20,9 +75,12 @@ services:
 
     volumes:
       # Mount Application Default Credentials to the location MCP Toolbox expects
-      # Windows users: Replace ${HOME} with ${USERPROFILE}
+      # Linux/Mac: ${HOME}/.config/gcloud/application_default_credentials.json
+      # Windows: ${APPDATA}/gcloud/application_default_credentials.json
       - ${APPDATA}/gcloud/application_default_credentials.json:/app/credentials/credentials.json:ro
 
+    networks:
+      - mcp-network
 
     restart: unless-stopped
 
@@ -30,5 +88,6 @@ services:
     # Check if container is running with: docker-compose ps
 
 networks:
-  default:
+  mcp-network:
     name: mcp-toolbox-network
+    driver: bridge
