@@ -7,8 +7,8 @@ on:
 env:
   AWS_REGION: eu-west-3
   ECR_REPOSITORY: multi-agent-app
-  ECS_SERVICE: multi-agent-app-service
-  ECS_CLUSTER: multi-agent-app-cluster
+  ECS_SERVICE: multi-agent-service
+  ECS_CLUSTER: multi-agent-cluster
   ECS_TASK_DEFINITION: .github/workflows/task_definition.json
   CONTAINER_NAME: multi-agent-app-container
 

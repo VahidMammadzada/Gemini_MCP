@@ -9,7 +9,7 @@
   "containerDefinitions": [
     {
       "name": "multi-agent-app",
-      "image": "730335436231.dkr.ecr.eu-west-3.amazonaws.com/multi-agent-app:latest",
+      "image": "730335436231.dkr.ecr.eu-west-3.amazonaws.com/multi-agent-app",
       "essential": true,
       "portMappings": [
         {
