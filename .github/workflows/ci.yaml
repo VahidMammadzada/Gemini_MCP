@@ -20,6 +20,45 @@ jobs:
           pip install -r requirements-clean.txt
           pip install pytest
 
+      - name: Setup Google Cloud credentials
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
+        run: |
+
+          # If GOOGLE_API_KEY is provided
+          if [ ! -z "$GOOGLE_API_KEY" ]; then
+            echo "GOOGLE_API_KEY is configured"
+            echo "GOOGLE_API_KEY=$GOOGLE_API_KEY" >> $GITHUB_ENV
+          fi
+
+      - name: Setup other environment variables
+        env:
+          CHROMA_API_KEY: ${{ secrets.CHROMA_API_KEY }}
+          CHROMA_TENANT: ${{ secrets.CHROMA_TENANT }}
+          CHROMA_DATABASE: ${{ secrets.CHROMA_DATABASE }}
+          COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
+          ALPHA_VANTAGE_API_KEY: ${{ secrets.ALPHA_VANTAGE_API_KEY }}
+        run: |
+          # Set ChromaDB credentials if available
+          if [ ! -z "$CHROMA_API_KEY" ]; then
+            echo "CHROMA_API_KEY=$CHROMA_API_KEY" >> $GITHUB_ENV
+          fi
+          if [ ! -z "$CHROMA_TENANT" ]; then
+            echo "CHROMA_TENANT=$CHROMA_TENANT" >> $GITHUB_ENV
+          fi
+          if [ ! -z "$CHROMA_DATABASE" ]; then
+            echo "CHROMA_DATABASE=$CHROMA_DATABASE" >> $GITHUB_ENV
+          fi
+
+          # Set other API keys if available
+          if [ ! -z "$COINGECKO_API_KEY" ]; then
+            echo "COINGECKO_API_KEY=$COINGECKO_API_KEY" >> $GITHUB_ENV
+          fi
+          if [ ! -z "$ALPHA_VANTAGE_API_KEY" ]; then
+            echo "ALPHA_VANTAGE_API_KEY=$ALPHA_VANTAGE_API_KEY" >> $GITHUB_ENV
+          fi
+          
       - name: Run unit tests
         run: |
           pytest tests/
