@@ -10,7 +10,7 @@ env:
   ECS_SERVICE: multi-agent-service
   ECS_CLUSTER: multi-agent-cluster
   ECS_TASK_DEFINITION: .github/workflows/task_definition.json
-  CONTAINER_NAME: multi-agent-app-container
+  CONTAINER_NAME: multi-agent-app
 
 permissions:
   id-token: write
