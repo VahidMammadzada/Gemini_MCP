@@ -213,13 +213,30 @@ def test_upload_endpoint_exists(client):
 # Integration Tests
 # ============================================================================
 
+@pytest.mark.integration
 @pytest.mark.asyncio
-async def test_system_initialization():
-    """Test that multi-agent system can initialize."""
+async def test_system_initialization(mock_all_agents):
+    """Test that multi-agent system can initialize (with mocked agents)."""
     # Reset initialization state
     multi_agent_app.initialized = False
 
     # Initialize
+    result = await multi_agent_app.initialize()
+
+    # Check initialization
+    assert multi_agent_app.initialized is True
+    assert multi_agent_app.supervisor is not None
+    assert "initialized" in result.lower() or "ready" in result.lower()
+
+
+@pytest.mark.requires_credentials
+@pytest.mark.asyncio
+async def test_system_initialization_real():
+    """Test that multi-agent system can initialize with real credentials."""
+    # Reset initialization state
+    multi_agent_app.initialized = False
+
+    # Initialize with real agents (only runs if credentials are available)
     result = await multi_agent_app.initialize()
 
     # Check initialization

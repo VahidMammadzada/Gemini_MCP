@@ -1,0 +1,120 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, master, develop, claude/** ]
+  pull_request:
+    branches: [ main, master, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        python-version: ['3.11']
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt', 'requirements-dev.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -r requirements-dev.txt
+
+    - name: Setup Google Cloud credentials
+      env:
+        GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+        GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
+        GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+      run: |
+        # If GCP_SA_KEY is provided (base64 encoded service account JSON)
+        if [ ! -z "$GCP_SA_KEY" ]; then
+          echo "Setting up service account credentials..."
+          echo "$GCP_SA_KEY" | base64 -d > $HOME/gcp-key.json
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$HOME/gcp-key.json" >> $GITHUB_ENV
+        fi
+
+        # If GOOGLE_API_KEY is provided
+        if [ ! -z "$GOOGLE_API_KEY" ]; then
+          echo "GOOGLE_API_KEY is configured"
+          echo "GOOGLE_API_KEY=$GOOGLE_API_KEY" >> $GITHUB_ENV
+        fi
+
+    - name: Setup other environment variables
+      env:
+        CHROMA_API_KEY: ${{ secrets.CHROMA_API_KEY }}
+        CHROMA_TENANT: ${{ secrets.CHROMA_TENANT }}
+        CHROMA_DATABASE: ${{ secrets.CHROMA_DATABASE }}
+        COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
+        ALPHA_VANTAGE_API_KEY: ${{ secrets.ALPHA_VANTAGE_API_KEY }}
+      run: |
+        # Set ChromaDB credentials if available
+        if [ ! -z "$CHROMA_API_KEY" ]; then
+          echo "CHROMA_API_KEY=$CHROMA_API_KEY" >> $GITHUB_ENV
+        fi
+        if [ ! -z "$CHROMA_TENANT" ]; then
+          echo "CHROMA_TENANT=$CHROMA_TENANT" >> $GITHUB_ENV
+        fi
+        if [ ! -z "$CHROMA_DATABASE" ]; then
+          echo "CHROMA_DATABASE=$CHROMA_DATABASE" >> $GITHUB_ENV
+        fi
+
+        # Set other API keys if available
+        if [ ! -z "$COINGECKO_API_KEY" ]; then
+          echo "COINGECKO_API_KEY=$COINGECKO_API_KEY" >> $GITHUB_ENV
+        fi
+        if [ ! -z "$ALPHA_VANTAGE_API_KEY" ]; then
+          echo "ALPHA_VANTAGE_API_KEY=$ALPHA_VANTAGE_API_KEY" >> $GITHUB_ENV
+        fi
+
+    - name: Run linting (optional)
+      run: |
+        # Uncomment if you want to run linting
+        # flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+      continue-on-error: true
+
+    - name: Run tests
+      env:
+        CI: true
+        PYTHONPATH: ${{ github.workspace }}
+      run: |
+        pytest test_api.py -v --tb=short --maxfail=5
+
+    - name: Run tests with coverage
+      env:
+        CI: true
+        PYTHONPATH: ${{ github.workspace }}
+      run: |
+        pytest test_api.py -v --cov=. --cov-report=xml --cov-report=term
+      continue-on-error: true
+
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+      continue-on-error: true
+
+    - name: Test summary
+      if: always()
+      run: |
+        echo "## Test Results" >> $GITHUB_STEP_SUMMARY
+        echo "Tests completed. Check the logs above for details." >> $GITHUB_STEP_SUMMARY
