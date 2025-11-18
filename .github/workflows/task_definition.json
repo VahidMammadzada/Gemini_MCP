@@ -1,0 +1,73 @@
+{
+  "family": "multi-agent-app",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "2048",
+  "executionRoleArn": "arn:aws:iam::YOUR_ACCOUNT_ID:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::YOUR_ACCOUNT_ID:role/ecsTaskRole",
+  "containerDefinitions": [
+    {
+      "name": "multi-agent-app",
+      "image": "YOUR_ECR_URI:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8501,
+          "protocol": "tcp",
+          "name": "streamlit"
+        },
+        {
+          "containerPort": 8000,
+          "protocol": "tcp",
+          "name": "fastapi"
+        }
+      ],
+      "environment": [],
+      "secrets": [
+        {
+          "name": "GOOGLE_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:multi-agent/GOOGLE_API_KEY"
+        },
+        {
+          "name": "COINGECKO_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:multi-agent/COINGECKO_API_KEY"
+        },
+        {
+          "name": "ALPHA_VANTAGE_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:multi-agent/ALPHA_VANTAGE_API_KEY"
+        },
+        {
+          "name": "CHROMA_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:multi-agent/CHROMA_API_KEY"
+        },
+        {
+          "name": "CHROMA_TENANT",
+          "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:multi-agent/CHROMA_TENANT"
+        },
+        {
+          "name": "CHROMA_DATABASE",
+          "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:multi-agent/CHROMA_DATABASE"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/multi-agent-app",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "curl -f http://localhost:8000/health || exit 1"
+        ],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 90
+      }
+    }
+  ]
+}
