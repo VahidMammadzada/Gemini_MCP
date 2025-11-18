@@ -9,7 +9,6 @@ from typing import Any, Dict, List, Optional
 import chromadb
 from config import config
 from file_processors import process_document
-# from langchain_core.messages import HumanMessage, ToolMessage  # Not needed for direct client approach
 from langchain_core.tools import BaseTool
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -295,7 +294,7 @@ class RAGAgentMCP:
             conversational_query = query
             if conversation_context:
                 try:
-                    rephrase_prompt = """You are a helpful assistant that rewrites follow-up questions.
+                    rephrase_prompt = f"""You are a helpful assistant that rewrites follow-up questions.
 Use the provided conversation history to rewrite the latest user input so it is a standalone question for document retrieval.
 
 Conversation history:
@@ -304,9 +303,14 @@ Conversation history:
 Latest user input: {query}
 
 Respond with only the rewritten standalone question."""
-                    rephrase_response = await self.model.ainvoke(rephrase_prompt)
-                    candidate = rephrase_response.content if hasattr(rephrase_response, "content") else str(rephrase_response)
-                    candidate = (candidate or "").strip()
+
+                    # Stream the rephrase response
+                    candidate_content = ""
+                    async for chunk in self.model.astream(rephrase_prompt):
+                        if hasattr(chunk, 'content') and chunk.content:
+                            candidate_content += chunk.content
+
+                    candidate = candidate_content.strip()
                     if candidate:
                         conversational_query = candidate
                 except Exception as rephrase_error:
@@ -353,10 +357,12 @@ Original user input: {query}
 
 Please provide a comprehensive answer based on the context above. If the context doesn't contain enough information to answer the question, please say so."""
 
-            # Generate answer using Gemini
-            print(f"  🤖 Generating answer with Gemini...")
-            response = await self.model.ainvoke(prompt)
-            final_response = response.content if hasattr(response, 'content') else str(response)
+            # Generate answer using Gemini with streaming
+            print(f"  🤖 Streaming answer from Gemini...")
+            final_response = ""
+            async for chunk in self.model.astream(prompt):
+                if hasattr(chunk, 'content') and chunk.content:
+                    final_response += chunk.content
 
             return {
                 "success": True,
