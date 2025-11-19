@@ -1,7 +1,9 @@
+
 """Streamlit UI for Multi-Agent Assistant connecting to FastAPI backend."""
 import streamlit as st
 import requests
 import json
+import os
 from typing import Dict, List, Optional
 import time
 from pathlib import Path
@@ -11,7 +13,7 @@ from pathlib import Path
 # ============================================================================
 
 # FastAPI backend URL
-API_BASE_URL = st.secrets.get("API_BASE_URL", "http://localhost:8000")
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 
 # Page configuration
 st.set_page_config(

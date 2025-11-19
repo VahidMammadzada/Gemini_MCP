@@ -38,21 +38,12 @@ RUN mkdir -p /tmp/uploads && chmod 777 /tmp/uploads
 # Copy and make startup script executable
 RUN chmod +x /app/start.sh
 
-# Create Streamlit config directory
+# Copy Streamlit config (includes dark theme)
 RUN mkdir -p /root/.streamlit
+COPY .streamlit/config.toml /root/.streamlit/config.toml
 
-# Streamlit config for production
-RUN echo '[server]\n\
-headless = true\n\
-port = 8501\n\
-address = "0.0.0.0"\n\
-enableXsrfProtection = true\n\
-\n\
-[browser]\n\
-gatherUsageStats = false\n\
-\n\
-[theme]\n\
-base = "light"\n' > /root/.streamlit/config.toml
+# Additional Streamlit config for production
+RUN echo '\n[browser]\ngatherUsageStats = false\n' >> /root/.streamlit/config.toml
 
 
 # Expose ports

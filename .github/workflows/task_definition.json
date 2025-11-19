@@ -27,6 +27,10 @@
         {
           "name": "ENV",
           "value": "production"
+        },
+        {
+          "name": "API_BASE_URL",
+          "value": "http://localhost:8000"
         }
       ],
       "secrets": [
