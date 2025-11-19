@@ -23,35 +23,17 @@
           "name": "fastapi"
         }
       ],
-      "environment": [],
+      "environment": [
+        {
+          "name": "ENV",
+          "value": "production"
+        }
+      ],
       "secrets": [
+
         {
-          "name": "GOOGLE_API_KEY",
-          "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:multi-agent/GOOGLE_API_KEY"
-        },
-        {
-          "name": "COINGECKO_API_KEY",
-          "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:multi-agent/COINGECKO_API_KEY"
-        },
-        {
-          "name": "ALPHA_VANTAGE_API_KEY",
-          "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:multi-agent/ALPHA_VANTAGE_API_KEY"
-        },
-        {
-          "name": "CHROMA_API_KEY",
-          "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:multi-agent/CHROMA_API_KEY"
-        },
-        {
-          "name": "CHROMA_TENANT",
-          "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:multi-agent/CHROMA_TENANT"
-        },
-        {
-          "name": "CHROMA_DATABASE",
-          "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:multi-agent/CHROMA_DATABASE"
-        },
-        {
-          "name": "GOOGLE_APPLICATION_CREDENTIALS",
-          "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:multi-agent/GOOGLE_APPLICATION_CREDENTIALS"
+          "name": "API_KEYS-VM91",
+          "valueFrom": "arn:aws:secretsmanager:eu-west-3:730335436231:secret:API_KEYS-VM91-fuw8iR"
         }
 
       ],
