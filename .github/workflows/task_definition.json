@@ -30,12 +30,30 @@
         }
       ],
       "secrets": [
-
         {
-          "name": "API_KEYS-VM91",
-          "valueFrom": "arn:aws:secretsmanager:eu-west-3:730335436231:secret:API_KEYS-VM91-fuw8iR"
+          "name": "GOOGLE_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:eu-west-3:730335436231:secret:API_KEYS-VM91-fuw8iR:GOOGLE_API_KEY::"
+        },
+        {
+          "name": "ALPHA_VANTAGE_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:eu-west-3:730335436231:secret:API_KEYS-VM91-fuw8iR:ALPHA_VANTAGE_API_KEY::"
+        },
+        {
+          "name": "COINGECKO_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:eu-west-3:730335436231:secret:API_KEYS-VM91-fuw8iR:COINGECKO_API_KEY::"
+        },
+        {
+          "name": "CHROMA_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:eu-west-3:730335436231:secret:API_KEYS-VM91-fuw8iR:CHROMA_API_KEY::"
+        },
+        {
+          "name": "CHROMA_TENANT",
+          "valueFrom": "arn:aws:secretsmanager:eu-west-3:730335436231:secret:API_KEYS-VM91-fuw8iR:CHROMA_TENANT::"
+        },
+        {
+          "name": "CHROMA_DATABASE",
+          "valueFrom": "arn:aws:secretsmanager:eu-west-3:730335436231:secret:API_KEYS-VM91-fuw8iR:CHROMA_DATABASE::"
         }
-
       ],
       "logConfiguration": {
         "logDriver": "awslogs",
