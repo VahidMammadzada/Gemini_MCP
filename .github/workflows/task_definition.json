@@ -2,8 +2,8 @@
   "family": "multi-agent-app",
   "networkMode": "awsvpc",
   "requiresCompatibilities": ["FARGATE"],
-  "cpu": "1356",
-  "memory": "3072",
+  "cpu": "1024",
+  "memory": "2048",
   "executionRoleArn": "arn:aws:iam::730335436231:role/ecsTaskExecutionRole",
   "taskRoleArn": "arn:aws:iam::730335436231:role/ecsTaskRole",
   "containerDefinitions": [
