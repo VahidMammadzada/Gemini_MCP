@@ -115,6 +115,10 @@
       ],
       "secrets": [
         {
+          "name": "GCP_SERVICE_ACCOUNT_JSON",
+          "valueFrom": "arn:aws:secretsmanager:eu-west-3:730335436231:secret:GCP_SERVICE_ACCOUNT_JSON::"
+        },
+        {
           "name": "CLOUD_SQL_POSTGRES_PROJECT",
           "valueFrom": "arn:aws:secretsmanager:eu-west-3:730335436231:secret:API_KEYS-VM91-fuw8iR:GCP_PROJECT_ID::"
         },

@@ -28,8 +28,12 @@ RUN ARCH=$(dpkg --print-architecture) && \
 # Verify installation
 RUN toolbox --version
 
-# Create credentials directory for mounting
+# Create credentials directory
 RUN mkdir -p /app/credentials
+
+# Copy entrypoint script
+COPY entrypoint-toolbox.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 # Expose port for HTTP server
 EXPOSE 5000
@@ -41,7 +45,8 @@ ENV CLOUD_SQL_POSTGRES_PROJECT="" \
     CLOUD_SQL_POSTGRES_INSTANCE="" \
     CLOUD_SQL_POSTGRES_DATABASE="" \
     CLOUD_SQL_POSTGRES_USER="" \
-    CLOUD_SQL_POSTGRES_PASSWORD=""
+    CLOUD_SQL_POSTGRES_PASSWORD="" \
+    GCP_SERVICE_ACCOUNT_JSON=""
 
-# Run MCP Toolbox as HTTP server
-CMD ["toolbox", "--prebuilt", "cloud-sql-postgres", "--port", "5000", "--address", "0.0.0.0"]
+# Run MCP Toolbox via entrypoint script (handles GCP credentials)
+ENTRYPOINT ["/entrypoint.sh"]
