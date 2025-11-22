@@ -2,8 +2,8 @@
   "family": "multi-agent-app",
   "networkMode": "awsvpc",
   "requiresCompatibilities": ["FARGATE"],
-  "cpu": "1024",
-  "memory": "2048",
+  "cpu": "1356",
+  "memory": "3072",
   "executionRoleArn": "arn:aws:iam::730335436231:role/ecsTaskExecutionRole",
   "taskRoleArn": "arn:aws:iam::730335436231:role/ecsTaskRole",
   "containerDefinitions": [
@@ -31,6 +31,10 @@
         {
           "name": "API_BASE_URL",
           "value": "http://localhost:8000"
+        },
+        {
+          "name": "MCP_TOOLBOX_SERVER_URL",
+          "value": "http://localhost:5000"
         }
       ],
       "secrets": [
@@ -57,12 +61,88 @@
         {
           "name": "CHROMA_DATABASE",
           "valueFrom": "arn:aws:secretsmanager:eu-west-3:730335436231:secret:API_KEYS-VM91-fuw8iR:CHROMA_DATABASE::"
+        },
+        {
+          "name": "GCP_PROJECT_ID",
+          "valueFrom": "arn:aws:secretsmanager:eu-west-3:730335436231:secret:API_KEYS-VM91-fuw8iR:GCP_PROJECT_ID::"
+        },
+        {
+          "name": "CLOUD_SQL_REGION",
+          "valueFrom": "arn:aws:secretsmanager:eu-west-3:730335436231:secret:API_KEYS-VM91-fuw8iR:CLOUD_SQL_REGION::"
+        },
+        {
+          "name": "CLOUD_SQL_INSTANCE",
+          "valueFrom": "arn:aws:secretsmanager:eu-west-3:730335436231:secret:API_KEYS-VM91-fuw8iR:CLOUD_SQL_INSTANCE::"
+        },
+        {
+          "name": "CLOUD_SQL_DB_NAME",
+          "valueFrom": "arn:aws:secretsmanager:eu-west-3:730335436231:secret:API_KEYS-VM91-fuw8iR:CLOUD_SQL_DB_NAME::"
+        },
+        {
+          "name": "CLOUD_SQL_DB_USER",
+          "valueFrom": "arn:aws:secretsmanager:eu-west-3:730335436231:secret:API_KEYS-VM91-fuw8iR:CLOUD_SQL_DB_USER::"
+        },
+        {
+          "name": "CLOUD_SQL_DB_PASS",
+          "valueFrom": "arn:aws:secretsmanager:eu-west-3:730335436231:secret:API_KEYS-VM91-fuw8iR:CLOUD_SQL_DB_PASS::"
+        }
+      ],
+      "dependsOn": [
+        {
+          "containerName": "mcp-toolbox",
+          "condition": "START"
         }
       ],
       "logConfiguration": {
         "logDriver": "awslogs",
         "options": {
           "awslogs-group": "/ecs/multi-agent-app",
+          "awslogs-region": "eu-west-3",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    },
+    {
+      "name": "mcp-toolbox",
+      "image": "730335436231.dkr.ecr.eu-west-3.amazonaws.com/mcp-toolbox",
+      "essential": false,
+      "portMappings": [
+        {
+          "containerPort": 5000,
+          "protocol": "tcp",
+          "name": "mcp-toolbox"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "CLOUD_SQL_POSTGRES_PROJECT",
+          "valueFrom": "arn:aws:secretsmanager:eu-west-3:730335436231:secret:API_KEYS-VM91-fuw8iR:GCP_PROJECT_ID::"
+        },
+        {
+          "name": "CLOUD_SQL_POSTGRES_REGION",
+          "valueFrom": "arn:aws:secretsmanager:eu-west-3:730335436231:secret:API_KEYS-VM91-fuw8iR:CLOUD_SQL_REGION::"
+        },
+        {
+          "name": "CLOUD_SQL_POSTGRES_INSTANCE",
+          "valueFrom": "arn:aws:secretsmanager:eu-west-3:730335436231:secret:API_KEYS-VM91-fuw8iR:CLOUD_SQL_INSTANCE::"
+        },
+        {
+          "name": "CLOUD_SQL_POSTGRES_DATABASE",
+          "valueFrom": "arn:aws:secretsmanager:eu-west-3:730335436231:secret:API_KEYS-VM91-fuw8iR:CLOUD_SQL_DB_NAME::"
+        },
+        {
+          "name": "CLOUD_SQL_POSTGRES_USER",
+          "valueFrom": "arn:aws:secretsmanager:eu-west-3:730335436231:secret:API_KEYS-VM91-fuw8iR:CLOUD_SQL_DB_USER::"
+        },
+        {
+          "name": "CLOUD_SQL_POSTGRES_PASSWORD",
+          "valueFrom": "arn:aws:secretsmanager:eu-west-3:730335436231:secret:API_KEYS-VM91-fuw8iR:CLOUD_SQL_DB_PASS::"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/mcp-toolbox",
           "awslogs-region": "eu-west-3",
           "awslogs-stream-prefix": "ecs"
         }

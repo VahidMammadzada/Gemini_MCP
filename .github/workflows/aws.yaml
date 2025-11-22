@@ -7,6 +7,7 @@ on:
 env:
   AWS_REGION: eu-west-3
   ECR_REPOSITORY: multi-agent-app
+  ECR_REPOSITORY_TOOLBOX: mcp-toolbox
   ECS_SERVICE: multi-agent-service
   ECS_CLUSTER: multi-agent-cluster
   ECS_TASK_DEFINITION: .github/workflows/task_definition.json
@@ -25,14 +26,15 @@ jobs:
         run: echo "CI passed on main branch, proceeding to build and deploy."
 
   # -------------------------------
-  # 1. Build & Push Docker Image
+  # 1. Build & Push Docker Images
   # -------------------------------
   build-and-push:
-    name: Build & Push Docker Image
+    name: Build & Push Docker Images
     needs: [check-status]
     runs-on: ubuntu-latest
     outputs:
       image: ${{ steps.build-image.outputs.image }}
+      toolbox-image: ${{ steps.build-toolbox.outputs.image }}
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4
@@ -48,7 +50,7 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and Push Docker Image
+      - name: Build and Push Main App Image
         id: build-image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -59,6 +61,23 @@ jobs:
           docker build -t $IMAGE_URI .
           docker push $IMAGE_URI
           echo "image=$IMAGE_URI" >> $GITHUB_OUTPUT
+
+      - name: Build and Push MCP Toolbox Image
+        id: build-toolbox
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          TOOLBOX_IMAGE_URI=$ECR_REGISTRY/$ECR_REPOSITORY_TOOLBOX:$IMAGE_TAG
+          docker build -f Dockerfile.toolbox -t $TOOLBOX_IMAGE_URI .
+          docker push $TOOLBOX_IMAGE_URI
+
+          # Also tag and push as 'latest'
+          TOOLBOX_LATEST=$ECR_REGISTRY/$ECR_REPOSITORY_TOOLBOX:latest
+          docker tag $TOOLBOX_IMAGE_URI $TOOLBOX_LATEST
+          docker push $TOOLBOX_LATEST
+
+          echo "image=$TOOLBOX_IMAGE_URI" >> $GITHUB_OUTPUT
 
   # -------------------------------
   # 2. Deploy to ECS
@@ -78,21 +97,32 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Render Task Definition
-        id: render-task
+      - name: Render Main App Container in Task Definition
+        id: render-app
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition: ${{ env.ECS_TASK_DEFINITION }}
           container-name: ${{ env.CONTAINER_NAME }}
           image: ${{ needs.build-and-push.outputs.image }}
-      - name: Print Rendered Task
-        run: cat ${{ steps.render-task.outputs.task-definition }}
+
+      - name: Render MCP Toolbox Container in Task Definition
+        id: render-toolbox
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: ${{ steps.render-app.outputs.task-definition }}
+          container-name: mcp-toolbox
+          image: ${{ needs.build-and-push.outputs.toolbox-image }}
+
+      - name: Print Final Rendered Task Definition
+        run: cat ${{ steps.render-toolbox.outputs.task-definition }}
+
       - name: Deploy to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
-          task-definition: ${{ steps.render-task.outputs.task-definition }}
+          task-definition: ${{ steps.render-toolbox.outputs.task-definition }}
           service: ${{ env.ECS_SERVICE }}
           cluster: ${{ env.ECS_CLUSTER }}
           wait-for-service-stability: true
+
       - name: Done!
-        run: echo "Deployed to ECS Fargate Successfully"
+        run: echo "Deployed to ECS Fargate Successfully with both containers!"
