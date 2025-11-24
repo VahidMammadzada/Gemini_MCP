@@ -17,7 +17,7 @@ trap shutdown SIGTERM SIGINT
 
 # Start FastAPI backend in background
 echo "📡 Starting FastAPI backend on port 8000..."
-uvicorn api:app --host 0.0.0.0 --port 8000 &
+uvicorn src.api.main:app --host 0.0.0.0 --port 8000 &
 FASTAPI_PID=$!
 
 # Wait for FastAPI to be ready
@@ -37,7 +37,7 @@ done
 
 # Start Streamlit frontend in foreground
 echo "🎨 Starting Streamlit UI on port 8501..."
-streamlit run streamlit_app.py \
+streamlit run ui/streamlit_app.py \
     --server.port 8501 \
     --server.address 0.0.0.0 \
     --server.headless true \
