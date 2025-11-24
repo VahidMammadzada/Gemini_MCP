@@ -20,22 +20,27 @@ RUN python --version && node --version && npm --version
 WORKDIR /app
 
 # Copy requirements first (for layer caching)
-COPY requirements-clean.txt .
+COPY requirements.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements-clean.txt
+    pip install --no-cache-dir -r requirements.txt
 
 # Install npx-based MCP servers globally (for CoinGecko)
 RUN npm install -g @coingecko/coingecko-mcp
 
-# Copy application code
-COPY . .
+# Copy application code with new structure
+COPY src/ ./src/
+COPY ui/ ./ui/
+COPY tests/ ./tests/
+
+# Copy startup script
+COPY scripts/start.sh ./start.sh
 
 # Create directory for temporary file uploads
 RUN mkdir -p /tmp/uploads && chmod 777 /tmp/uploads
 
-# Copy and make startup script executable
+# Make startup script executable
 RUN chmod +x /app/start.sh
 
 # Copy Streamlit config (includes dark theme)

@@ -2,15 +2,15 @@
 import asyncio
 import gradio as gr
 from gradio import ChatMessage
-from crypto_agent_mcp import CryptoAgentMCP
-from rag_agent_mcp import RAGAgentMCP
-from stock_agent_mcp import StockAgentMCP
-from search_agent_mcp import SearchAgentMCP
-from finance_tracker_agent_mcp import FinanceTrackerMCP
+from src.agents.crypto_agent_mcp import CryptoAgentMCP
+from src.agents.rag_agent_mcp import RAGAgentMCP
+from src.agents.stock_agent_mcp import StockAgentMCP
+from src.agents.search_agent_mcp import SearchAgentMCP
+from src.agents.finance_tracker_agent_mcp import FinanceTrackerMCP
 from typing import Dict, List, AsyncGenerator
 from pathlib import Path
 import os
-from langgraph_supervisor import ReActSupervisor
+from src.core.langgraph_supervisor import ReActSupervisor
 
 class MultiAgentApp:
     """Main application orchestrating LLM supervisor and agents."""
@@ -475,7 +475,7 @@ def main():
 
     # Validate configuration
     try:
-        from config import config
+        from src.core.config import config
         config.validate()
         print("✅ Configuration validated")
     except ValueError as e:

@@ -1,9 +1,9 @@
-"""Stock Agent using Alpha Vantage MCP Server via LangChain MCP adapters."""
+"""Crypto Agent using CoinGecko MCP Server via LangChain MCP adapters."""
 import json
 import shutil
 from typing import Any, Dict, List, Optional
 
-from config import config
+from src.core.config import config
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -29,12 +29,13 @@ def _to_text(payload: Any) -> str:
         return str(payload)
 
 
-class StockAgentMCP:
-    """Agent specialized in stock market data using Alpha Vantage MCP Server."""
+class CryptoAgentMCP:
+    """Agent specialized in cryptocurrency data using CoinGecko MCP Server."""
 
-    def __init__(self):
-        self.name = "Stock Agent (MCP)"
-        self.description = "Stock market data and analysis expert using Alpha Vantage MCP Server"
+    def __init__(self, use_public_endpoint: bool = False):
+        self.name = "Crypto Agent (MCP)"
+        self.description = "Cryptocurrency market data and analysis expert using CoinGecko MCP Server"
+        self.use_public_endpoint = use_public_endpoint
         self.mcp_client: Optional[MultiServerMCPClient] = None
         self.model: Optional[ChatGoogleGenerativeAI] = None
         self.model_with_tools = None
@@ -42,51 +43,47 @@ class StockAgentMCP:
         self.tool_map: Dict[str, BaseTool] = {}
 
     async def initialize(self) -> None:
-        """Initialize the agent with Alpha Vantage MCP Server."""
-        print(f"📧 Initializing {self.name}...")
+        """Initialize the agent with CoinGecko MCP Server."""
+        print(f"🔧 Initializing {self.name}...")
 
         try:
-            # Connect to Alpha Vantage MCP Server
-            print(f"  📡 Connecting to Alpha Vantage MCP Server...")
+            # Connect to CoinGecko MCP Server
+            print(f"  📡 Connecting to CoinGecko MCP Server...")
 
-            connection_name = "alphavantage"
+            connection_name = "coingecko"
             connections: Dict[str, Dict[str, Any]] = {}
 
-            api_key = (config.ALPHA_VANTAGE_API_KEY or "").strip()
-            if not api_key:
-                raise ValueError(
-                    "ALPHA_VANTAGE_API_KEY not configured in .env file.\n"
-                    "Get your free API key from: https://www.alphavantage.co/support/#api-key"
-                )
+            api_key = (config.COINGECKO_API_KEY or "").strip()
+            if api_key.lower().startswith("demo"):
+                print("    Demo API key detected. Using public endpoint with limited access...")
+                self.use_public_endpoint = True
 
-            print("    Using Alpha Vantage local MCP server via uvx...")
-            
-            # Try to find uvx executable (uv's command runner)
-            try:
-                uvx_executable = _resolve_executable(["uvx.exe", "uvx.cmd", "uvx"])
-                print(f"    Found uvx at: {uvx_executable}")
-            except FileNotFoundError:
-                raise ValueError(
-                    "uvx not found. Please install uv (Python package manager) from:\n"
-                    "  Windows: pip install uv\n"
-                    "  Or visit: https://docs.astral.sh/uv/getting-started/installation/\n"
-                    "After installing, restart your terminal/IDE."
-                )
-            
-            # Alpha Vantage MCP uses stdio transport with uvx av-mcp
-            connections[connection_name] = {
-                "transport": "stdio",
-                "command": uvx_executable,
-                "args": ["av-mcp", api_key],
-            }
+            if self.use_public_endpoint or not api_key:
+                print("    Using public SSE endpoint...")
+                connections[connection_name] = {
+                    "transport": "sse",
+                    "url": "https://mcp.api.coingecko.com/sse",
+                }
+            else:
+                print("    Using Pro endpoint with API key...")
+                npx_executable = _resolve_executable(["npx.cmd", "npx.exe", "npx"])
+                env = {
+                    "COINGECKO_PRO_API_KEY": api_key,
+                    "COINGECKO_ENVIRONMENT": "pro",
+                }
+                connections[connection_name] = {
+                    "transport": "stdio",
+                    "command": npx_executable,
+                    "args": ["-y", "@coingecko/coingecko-mcp"],
+                    "env": env,
+                }
 
             self.mcp_client = MultiServerMCPClient(connections)
 
             # Load MCP tools as LangChain tools
-            print("    Loading tools from Alpha Vantage MCP Server...")
             self.tools = await self.mcp_client.get_tools(server_name=connection_name)
             if not self.tools:
-                raise RuntimeError("No tools available from Alpha Vantage MCP Server")
+                raise RuntimeError("No tools available from CoinGecko MCP Server")
 
             self.tool_map = {tool.name: tool for tool in self.tools}
 
@@ -98,16 +95,7 @@ class StockAgentMCP:
             )
             self.model_with_tools = self.model.bind_tools(self.tools)
 
-            print(f"  ✅ Connected to Alpha Vantage MCP Server with {len(self.tools)} tools")
-            print(f"  📋 Available tool categories:")
-            
-            # Group tools by category for better display
-            tool_names = [tool.name for tool in self.tools]
-            print(f"    - Core Stock APIs: TIME_SERIES_*, GLOBAL_QUOTE, SYMBOL_SEARCH, etc.")
-            print(f"    - Fundamental Data: COMPANY_OVERVIEW, INCOME_STATEMENT, etc.")
-            print(f"    - Alpha Intelligence: NEWS_SENTIMENT, TOP_GAINERS_LOSERS, etc.")
-            print(f"    - Technical Indicators: RSI, MACD, SMA, EMA, etc.")
-            print(f"    Total: {len(self.tools)} tools available")
+            print(f"  ✅ Connected to CoinGecko MCP Server with {len(self.tools)} tools")
 
             print(f"  ✅ {self.name} ready!")
 
@@ -119,9 +107,9 @@ class StockAgentMCP:
             raise
 
     async def process(self, query: str, history: Optional[List[Dict[str, str]]] = None) -> Dict[str, Any]:
-        """Process a query using Alpha Vantage MCP Server tools."""
+        """Process a query using CoinGecko MCP Server tools."""
         try:
-            print(f"\n📈 {self.name} processing: '{query}'")
+            print(f"\n💰 {self.name} processing: '{query}'")
             messages: List[Any] = []
             if history:
                 trimmed_history = history[-10:]

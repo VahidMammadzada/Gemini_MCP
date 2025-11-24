@@ -2,7 +2,7 @@
 import json
 from typing import Any, Dict, List, Optional
 
-from config import config
+from src.core.config import config
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from toolbox_langchain import ToolboxClient

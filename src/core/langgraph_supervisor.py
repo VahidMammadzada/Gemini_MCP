@@ -9,7 +9,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, System
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 
-from config import config
+from src.core.config import config
 
 
 class AgentState(TypedDict):

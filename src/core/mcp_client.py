@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from config import config
+from src.core.config import config
 
 
 class ProperMCPClient:

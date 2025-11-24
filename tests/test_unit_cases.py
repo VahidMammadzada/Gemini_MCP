@@ -6,7 +6,7 @@ root endpoint, and system initialization.
 """
 import pytest
 from fastapi.testclient import TestClient
-from api import app, multi_agent_app
+from src.api.main import app, multi_agent_app
 
 
 # ============================================================================

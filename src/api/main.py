@@ -10,12 +10,12 @@ from pathlib import Path
 import tempfile
 import os
 
-from crypto_agent_mcp import CryptoAgentMCP
-from rag_agent_mcp import RAGAgentMCP
-from stock_agent_mcp import StockAgentMCP
-from search_agent_mcp import SearchAgentMCP
-from finance_tracker_agent_mcp import FinanceTrackerMCP
-from langgraph_supervisor import ReActSupervisor
+from src.agents.crypto_agent_mcp import CryptoAgentMCP
+from src.agents.rag_agent_mcp import RAGAgentMCP
+from src.agents.stock_agent_mcp import StockAgentMCP
+from src.agents.search_agent_mcp import SearchAgentMCP
+from src.agents.finance_tracker_agent_mcp import FinanceTrackerMCP
+from src.core.langgraph_supervisor import ReActSupervisor
 
 
 # ============================================================================
@@ -255,7 +255,7 @@ async def startup_event():
 
     # Validate configuration
     try:
-        from config import config
+        from src.core.config import config
         config.validate()
         print("✅ Configuration validated")
     except ValueError as e:
