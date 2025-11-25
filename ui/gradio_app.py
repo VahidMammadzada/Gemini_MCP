@@ -137,35 +137,62 @@ class MultiAgentApp:
                     yield action_msg
 
                 elif update.get("type") == "observation":
-                    # Update the action message with checkmark
+                    # Extract tool calls from summary
                     agent = update.get("agent", "unknown")
+                    summary = update.get("summary", "")
+                    
+                    # Split summary into tool calls and results
+                    tool_calls = []
+                    results = []
+                    for line in summary.split('\n'):
+                        # Match all tool call prefixes from different agents
+                        if any(prefix in line for prefix in ['🔧 MCP Tool call:', '🔧 DuckDuckGo call:', '🔧 MCP Toolbox call:']):
+                            tool_calls.append(line)
+                        elif line.strip():
+                            results.append(line)
+                    
+                    # Update the action message with tool calls
                     if agent in action_message_ids:
-                        # Yield updated action message with status="done"
                         action_msg_id = action_message_ids[agent]
+                        tool_calls_text = '\n'.join(tool_calls) if tool_calls else ""
+                        updated_content = f"✓ Called **{agent.upper()}** agent\n\n{tool_calls_text}"
+                        
                         updated_action_msg = ChatMessage(
                             role="assistant",
-                            content=f"✓ Called **{agent.upper()}** agent",
+                            content=updated_content,
                             metadata={
                                 "title": f"🔧 Calling {agent.title()} Agent",
                                 "id": action_msg_id,
-                                "status": "done"  # ← Checkmark appears!
+                                "status": "done"  
                             }
                         )
                         yield updated_action_msg
                     
-                    # Show observation results
-                    summary = update.get("summary", "")
-                    message_id += 1
-                    obs_msg = ChatMessage(
-                        role="assistant",
-                        content=summary,
-                        metadata={
-                            "title": f"📊 {agent.title()} Agent Results",
-                            "id": message_id,
-                            "status": "done"
+                    # Show only the results in observation (without tool calls)
+                    if results:
+                        results_text = '\n'.join(results)
+                        message_id += 1
+                        
+                        # Map agent names to emojis
+                        agent_emojis = {
+                            "finance_tracker": "💼",
+                            "crypto": "🪙",
+                            "search": "🌐",
+                            "stock": "📈",
+                            "rag": "📚"
                         }
-                    )
-                    yield obs_msg
+                        agent_emoji = agent_emojis.get(agent.lower(), "📊")
+                        
+                        obs_msg = ChatMessage(
+                            role="assistant",
+                            content=results_text,
+                            metadata={
+                                "title": f"{agent_emoji} {agent.title()} Agent Results",
+                                "id": message_id,
+                                "status": "done"
+                            }
+                        )
+                        yield obs_msg
 
                 elif update.get("type") == "final_start":
                     # Start of final answer - create placeholder message
@@ -190,7 +217,7 @@ class MultiAgentApp:
                     )
 
                 elif update.get("type") == "final_complete":
-                    # Final answer is complete - ensure final message is properly set
+                    # Final answer is complete
                     if final_answer_accumulated:
                         yield ChatMessage(
                             role="assistant",
@@ -312,7 +339,7 @@ def create_ui():
                     msg = gr.Textbox(
                         label="Your Message",
                         placeholder="Ask about crypto, stocks, documents, or search the web...",
-                        lines=2,
+                        lines=1,
                         scale=4
                     )
                     with gr.Column(scale=1):
@@ -323,11 +350,11 @@ def create_ui():
                     with gr.Column(scale=1):
                         gr.Markdown("""
                 ### 🤖 Available Agents:
-                -🪙 **Crypto Agent**: Real-time crypto prices, market data, and trends | Uses Coingecko MCP Server
-                -📊 **Stock Agent**: Stock prices, company info, financial data, and market analysis | Uses Alphavantage MCP Server
-                -💼 **Finance Tracker**: Manage your personal stock portfolio (add transactions, track performance, get portfolio news)
-                -📚 **RAG Agent**: Query your uploaded documents with AI | Uses ChromaDB API
-                -🔍 **Search Agent**: Search the web using DuckDuckGo | Uses DuckDuckGo MCP Server
+                - 🪙 **Crypto Agent**: Real-time crypto prices, market data, and trends | Uses Coingecko MCP Server
+                - 📊 **Stock Agent**: Stock prices, company info, financial data, and market analysis | Uses Alphavantage MCP Server
+                - 💼 **Finance Tracker**: Manage your personal stock portfolio (add transactions, track performance, get portfolio news)
+                - 📚 **RAG Agent**: Query your uploaded documents with AI | Uses ChromaDB API
+                - 🔍 **Search Agent**: Search the web using DuckDuckGo | Uses DuckDuckGo MCP Server
                         """)
                     
                     with gr.Column(scale=1):

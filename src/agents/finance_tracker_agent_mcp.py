@@ -265,6 +265,7 @@ Be helpful, accurate, and provide investment insights based on their data."""
             messages.append(HumanMessage(content=query))
 
             # Tool calling loop - gather data from database
+            tool_calls_info = []
             while True:
                 if not self.model_with_tools:
                     raise RuntimeError("Model not initialized with tools")
@@ -282,6 +283,7 @@ Be helpful, accurate, and provide investment insights based on their data."""
                     tool_args = call.get("args", {})
                     tool_call_id = call.get("id")
                     print(f"  🔧 MCP Toolbox call: {tool_name}({json.dumps(tool_args, indent=2)})")
+                    tool_calls_info.append(f"🔧 MCP Toolbox call: {tool_name}({json.dumps(tool_args)})")
 
                     tool = self.tool_map.get(tool_name)
                     if not tool:
@@ -323,7 +325,8 @@ Guidelines:
                 "agent": self.name,
                 "response": final_response,
                 "query": query,
-                "structured_data": structured_response.model_dump()  # Include raw structured data
+                "structured_data": structured_response.model_dump(),  # Include raw structured data
+                "tool_calls": tool_calls_info
             }
 
         except Exception as e:

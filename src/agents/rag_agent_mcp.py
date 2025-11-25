@@ -282,10 +282,27 @@ class RAGAgentMCP:
                 trimmed_history = history[-6:]
                 history_lines: List[str] = []
                 for turn in trimmed_history:
-                    user_text = turn.get("user", "").strip()
+                    user_text = turn.get("user", "")
+                    # Handle both string and list types
+                    if isinstance(user_text, str):
+                        user_text = user_text.strip()
+                    elif isinstance(user_text, list):
+                        user_text = " ".join(str(x) for x in user_text).strip()
+                    else:
+                        user_text = str(user_text).strip()
+                    
                     if user_text:
                         history_lines.append(f"User: {user_text}")
-                    assistant_text = turn.get("assistant", "").strip()
+                    
+                    assistant_text = turn.get("assistant", "")
+                    # Handle both string and list types
+                    if isinstance(assistant_text, str):
+                        assistant_text = assistant_text.strip()
+                    elif isinstance(assistant_text, list):
+                        assistant_text = " ".join(str(x) for x in assistant_text).strip()
+                    else:
+                        assistant_text = str(assistant_text).strip()
+                    
                     if assistant_text:
                         history_lines.append(f"Assistant: {assistant_text}")
                 if history_lines:

@@ -84,9 +84,13 @@ class StockAgentMCP:
 
             # Load MCP tools as LangChain tools
             print("    Loading tools from Alpha Vantage MCP Server...")
-            self.tools = await self.mcp_client.get_tools(server_name=connection_name)
-            if not self.tools:
+            all_tools = await self.mcp_client.get_tools(server_name=connection_name)
+            if not all_tools:
                 raise RuntimeError("No tools available from Alpha Vantage MCP Server")
+
+            # Exclude REALTIME_BULK_QUOTES tool
+            self.tools = [tool for tool in all_tools if tool.name != "REALTIME_BULK_QUOTES"]
+            print(f"    Excluded REALTIME_BULK_QUOTES tool")
 
             self.tool_map = {tool.name: tool for tool in self.tools}
 
@@ -134,6 +138,7 @@ class StockAgentMCP:
                         messages.append(AIMessage(content=assistant_text))
             messages.append(HumanMessage(content=query))
             final_response = ""
+            tool_calls_info = []
 
             while True:
                 if not self.model_with_tools:
@@ -152,6 +157,7 @@ class StockAgentMCP:
                     tool_args = call.get("args", {})
                     tool_call_id = call.get("id")
                     print(f"  🔧 MCP Tool call: {tool_name}({tool_args})")
+                    tool_calls_info.append(f"🔧 MCP Tool call: {tool_name}({tool_args})")
 
                     tool = self.tool_map.get(tool_name)
                     if not tool:
@@ -170,7 +176,8 @@ class StockAgentMCP:
                 "success": True,
                 "agent": self.name,
                 "response": final_response,
-                "query": query
+                "query": query,
+                "tool_calls": tool_calls_info
             }
 
         except Exception as e:

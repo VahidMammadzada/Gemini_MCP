@@ -122,6 +122,7 @@ class CryptoAgentMCP:
                         messages.append(AIMessage(content=assistant_text))
             messages.append(HumanMessage(content=query))
             final_response = ""
+            tool_calls_info = []
 
             while True:
                 if not self.model_with_tools:
@@ -140,6 +141,7 @@ class CryptoAgentMCP:
                     tool_args = call.get("args", {})
                     tool_call_id = call.get("id")
                     print(f"  🔧 MCP Tool call: {tool_name}({tool_args})")
+                    tool_calls_info.append(f"🔧 MCP Tool call: {tool_name}({tool_args})")
 
                     tool = self.tool_map.get(tool_name)
                     if not tool:
@@ -158,7 +160,8 @@ class CryptoAgentMCP:
                 "success": True,
                 "agent": self.name,
                 "response": final_response,
-                "query": query
+                "query": query,
+                "tool_calls": tool_calls_info
             }
 
         except Exception as e:

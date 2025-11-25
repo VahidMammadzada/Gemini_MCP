@@ -319,6 +319,7 @@ JUSTIFICATION: [Why this action will help]"""
         latest_output = "No new observations"
         latest_agent = "unknown"
         search_urls = None
+        tool_calls = None
 
         if agent_outputs:
             for agent_name, output in list(agent_outputs.items())[-1:]:
@@ -329,10 +330,19 @@ JUSTIFICATION: [Why this action will help]"""
                     # Extract search URLs if available (from search agent)
                     if "search_urls" in output:
                         search_urls = output["search_urls"]
+                    # Extract tool calls if available (from MCP agents)
+                    if "tool_calls" in output:
+                        tool_calls = output["tool_calls"]
                     break
 
-        # Log summary (increased limit since UI shows in dropdown)
-        summary = latest_output[:2000] + "..." if len(latest_output) > 2000 else latest_output
+        # Prepend tool calls to the summary if available
+        summary = latest_output
+        if tool_calls:
+            tool_calls_text = "\n".join(tool_calls)
+            summary = f"{tool_calls_text}\n   Observation from {latest_agent}: {latest_output}"
+
+        # Apply length limit
+        summary = summary[:2000] + "..." if len(summary) > 2000 else summary
         print(f"   Observation from {latest_agent}: {summary}")
 
         # Emit streaming update with search URLs if available

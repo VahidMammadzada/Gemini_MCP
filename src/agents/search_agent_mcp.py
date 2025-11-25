@@ -141,6 +141,7 @@ Always use the search tool first before answering."""
 
             # Track search URLs for references
             search_urls = []
+            tool_calls_info = []
 
             # Tool calling loop
             max_iterations = 3
@@ -162,6 +163,8 @@ Always use the search tool first before answering."""
                     }
                     if search_urls:
                         result["search_urls"] = search_urls
+                    if tool_calls_info:
+                        result["tool_calls"] = tool_calls_info
                     return result
 
                 # Execute tool calls
@@ -177,6 +180,7 @@ Always use the search tool first before answering."""
                         tool_id = getattr(tool_call, 'id', '')
 
                     print(f"  🔧 Executing: {tool_name}({tool_args})")
+                    tool_calls_info.append(f"🔧 DuckDuckGo call: {tool_name}({tool_args})")
 
                     # Get the tool
                     tool = self.tool_map.get(tool_name)
@@ -253,6 +257,8 @@ Always use the search tool first before answering."""
             }
             if search_urls:
                 result["search_urls"] = search_urls
+            if tool_calls_info:
+                result["tool_calls"] = tool_calls_info
             return result
 
         except Exception as e:
