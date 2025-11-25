@@ -1,6 +1,6 @@
 # Gemini MCP
 
-A multi-agent AI assistant powered by Gemini LLM using the ReAct pattern to orchestrate specialized agents through Model Context Protocol (MCP). Features a LangGraph supervisor with streaming Gradio UI.
+A multi-agent AI assistant powered by Gemini LLM using the ReAct pattern to orchestrate specialized agents through Model Context Protocol (MCP). Features a LangGraph supervisor with streaming Streamlit and Gradio UIs.
 
 ## ✨ Features
 
