@@ -293,17 +293,10 @@ except RuntimeError:
 
 def create_ui():
     """Create Gradio interface."""
-    
-    with gr.Blocks(title="Multi-Agent Assistant", theme=gr.themes.Soft()) as interface:
+
+    with gr.Blocks(title="PortfolioMind") as interface:
         gr.Markdown("""
-        # 🤖 Multi-Agent Assistant with ReAct Supervisor
-        
-        **Available Agents:**
-        - 🪙 **Crypto Agent**: Real-time crypto prices, market data, and trends
-        - 📊 **Stock Agent**: Stock prices, company info, financial data, and market analysis
-        - 💼 **Finance Tracker**: Manage your personal stock portfolio (add transactions, track performance, get portfolio news)
-        - 📚 **RAG Agent**: Query your uploaded documents with AI
-        - 🔍 **Search Agent**: Search the web using DuckDuckGo
+        # 🤖 PortfolioMind MCP - The Multi-Agent FinAssistant
         """)
         
         with gr.Row():
@@ -311,10 +304,9 @@ def create_ui():
                 # Chat Interface
                 chatbot = gr.Chatbot(
                     label="Multi-Agent Assistant",
-                    height=700,
+                    height=600,
                     show_label=True,
-                    avatar_images=(None, "🤖"),
-                    type='messages',
+                    avatar_images=("👤", "🤖"),
                 )
                 
                 with gr.Row():
@@ -328,8 +320,20 @@ def create_ui():
                         submit_btn = gr.Button("Send", variant="primary")
                         clear_btn = gr.Button("Clear Chat")
                 
-                gr.Markdown("""
-                **Example queries:**
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        gr.Markdown("""
+                ### 🤖 Available Agents:
+                - 🪙 **Crypto Agent**: Real-time crypto prices, market data, and trends | Uses Coingecko MCP Server
+                - 📊 **Stock Agent**: Stock prices, company info, financial data, and market analysis | Uses Alphavantage MCP Server
+                - 💼 **Finance Tracker**: Manage your personal stock portfolio (add transactions, track performance, get portfolio news)
+                - 📚 **RAG Agent**: Query your uploaded documents with AI | Uses ChromaDB API
+                - 🔍 **Search Agent**: Search the web using DuckDuckGo | Uses DuckDuckGo MCP Server
+                        """)
+                    
+                    with gr.Column(scale=1):
+                        gr.Markdown("""                               
+                ### ❓ Example queries
                 - What's the current price of Bitcoin and Ethereum?
                 - Add 10 shares of AAPL I bought at $150
                 - What's my current portfolio value?
@@ -338,14 +342,15 @@ def create_ui():
                 - Show me Tesla's financial overview
                 - Search for latest AI developments
                 - What does my document say about [topic]?
-                            
-                 **How it works:**
+                        """)
+                    with gr.Column(scale=1):
+                        gr.Markdown("""                                                                            
+                ### 🤔 How it works
                 1. You ask a question
                 2. The ReAct supervisor analyzes your query and plans a strategy
                 3. It calls relevant agents to gather information
                 4. It synthesizes a comprehensive answer from all sources
-                """)
-            
+                        """)
             with gr.Column(scale=1):
                 # Document Upload
                 gr.Markdown("### 📄 Upload Documents")
@@ -362,7 +367,6 @@ def create_ui():
                 )
                 
                 # System Status
-                gr.Markdown("### 🔧 System Status")
                 status_box = gr.Textbox(
                     label="Initialization Status",
                     value="✅ All agents initialized and ready!" if app.initialized else "⏳ Initializing...",
@@ -497,7 +501,8 @@ def main():
         interface.launch(
             server_name="0.0.0.0",
             server_port=7860,
-            share=True
+            share=True,
+            theme=gr.themes.Citrus()
         )
     except KeyboardInterrupt:
         print("\n\n🛑 Shutting down...")

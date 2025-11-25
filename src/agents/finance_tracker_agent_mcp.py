@@ -1,6 +1,7 @@
 """Finance Tracker Agent using MCP Toolbox Docker server via HTTP."""
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Literal
+from pydantic import BaseModel, Field
 
 from src.core.config import config
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -16,6 +17,116 @@ def _to_text(payload: Any) -> str:
         return json.dumps(payload, ensure_ascii=False)
     except TypeError:
         return str(payload)
+
+
+# Pydantic schemas for structured output
+class PortfolioHolding(BaseModel):
+    """A single stock holding in the portfolio."""
+    symbol: str = Field(description="Stock ticker symbol (e.g., AAPL, MSFT)")
+    quantity: float = Field(description="Number of shares held")
+    avg_cost_basis: float = Field(description="Average cost per share")
+    total_invested: float = Field(description="Total amount invested (quantity * avg_cost_basis)")
+    realized_gains: Optional[float] = Field(default=None, description="Realized gains/losses from sales")
+
+
+class TransactionRecord(BaseModel):
+    """A stock transaction record."""
+    symbol: str = Field(description="Stock ticker symbol")
+    transaction_type: Literal["BUY", "SELL"] = Field(description="Type of transaction")
+    quantity: float = Field(description="Number of shares")
+    price: float = Field(description="Price per share")
+    transaction_date: str = Field(description="Date of transaction")
+    notes: Optional[str] = Field(default=None, description="Additional notes")
+
+
+class PortfolioResponse(BaseModel):
+    """Structured response for portfolio queries."""
+    response_type: Literal["portfolio_view", "transaction_added", "transaction_history", "general_response"] = Field(
+        description="Type of response being provided"
+    )
+    summary: str = Field(description="Brief summary of the response")
+    holdings: Optional[List[PortfolioHolding]] = Field(
+        default=None,
+        description="Current portfolio holdings (for portfolio_view)"
+    )
+    transaction: Optional[TransactionRecord] = Field(
+        default=None,
+        description="Transaction details (for transaction_added)"
+    )
+    transactions: Optional[List[TransactionRecord]] = Field(
+        default=None,
+        description="List of transactions (for transaction_history)"
+    )
+    total_portfolio_value: Optional[float] = Field(
+        default=None,
+        description="Total portfolio value"
+    )
+    insights: Optional[List[str]] = Field(
+        default=None,
+        description="Key insights or recommendations"
+    )
+
+
+def format_portfolio_response(response: PortfolioResponse) -> str:
+    """Format structured portfolio response into readable text."""
+    output = []
+
+    # Add summary
+    output.append(response.summary)
+    output.append("")
+
+    # Format holdings if present
+    if response.holdings:
+        output.append("## Current Portfolio Holdings")
+        output.append("")
+        for holding in response.holdings:
+            output.append(f"**{holding.symbol}**:")
+            output.append(f"- Shares: {holding.quantity}")
+            output.append(f"- Average Cost: ${holding.avg_cost_basis:.2f} per share")
+            output.append(f"- Total Invested: ${holding.total_invested:.2f}")
+            if holding.realized_gains is not None:
+                output.append(f"- Realized Gains: ${holding.realized_gains:.2f}")
+            output.append("")
+
+    # Format single transaction if present
+    if response.transaction:
+        output.append("## Transaction Details")
+        output.append("")
+        t = response.transaction
+        output.append(f"- **Type**: {t.transaction_type}")
+        output.append(f"- **Symbol**: {t.symbol}")
+        output.append(f"- **Quantity**: {t.quantity} shares")
+        output.append(f"- **Price**: ${t.price:.2f} per share")
+        output.append(f"- **Date**: {t.transaction_date}")
+        output.append(f"- **Total Amount**: ${t.quantity * t.price:.2f}")
+        if t.notes:
+            output.append(f"- **Notes**: {t.notes}")
+        output.append("")
+
+    # Format transaction history if present
+    if response.transactions:
+        output.append("## Transaction History")
+        output.append("")
+        for t in response.transactions:
+            output.append(f"**{t.transaction_date}** - {t.transaction_type} {t.quantity} shares of {t.symbol} @ ${t.price:.2f}")
+            if t.notes:
+                output.append(f"  Notes: {t.notes}")
+        output.append("")
+
+    # Add total portfolio value if present
+    if response.total_portfolio_value is not None:
+        output.append(f"**Total Portfolio Value**: ${response.total_portfolio_value:.2f}")
+        output.append("")
+
+    # Add insights if present
+    if response.insights:
+        output.append("## Key Insights")
+        output.append("")
+        for insight in response.insights:
+            output.append(f"- {insight}")
+        output.append("")
+
+    return "\n".join(output).strip()
 
 
 class FinanceTrackerMCP:
@@ -36,6 +147,7 @@ class FinanceTrackerMCP:
         self.toolbox_client: Optional[ToolboxClient] = None
         self.model: Optional[ChatGoogleGenerativeAI] = None
         self.model_with_tools = None
+        self.model_structured = None
         self.tools: List[Any] = []
         self.tool_map: Dict[str, Any] = {}
         self.initialized = False
@@ -73,6 +185,9 @@ class FinanceTrackerMCP:
                 google_api_key=config.GOOGLE_API_KEY,
             )
             self.model_with_tools = self.model.bind_tools(self.tools)
+
+            # Initialize model with structured output for final responses
+            self.model_structured = self.model.with_structured_output(PortfolioResponse)
 
             print(f"  ✅ Connected to MCP Toolbox with {len(self.tools)} tools")
             print(f"  📋 Available MCP Toolbox capabilities:")
@@ -145,9 +260,8 @@ Be helpful, accurate, and provide investment insights based on their data."""
                         messages.append(AIMessage(content=assistant_text))
 
             messages.append(HumanMessage(content=query))
-            final_response = ""
 
-            # Tool calling loop
+            # Tool calling loop - gather data from database
             while True:
                 if not self.model_with_tools:
                     raise RuntimeError("Model not initialized with tools")
@@ -157,7 +271,7 @@ Be helpful, accurate, and provide investment insights based on their data."""
 
                 tool_calls = getattr(ai_message, "tool_calls", [])
                 if not tool_calls:
-                    final_response = _to_text(ai_message.content)
+                    # No more tool calls - exit loop
                     break
 
                 for call in tool_calls:
@@ -179,11 +293,34 @@ Be helpful, accurate, and provide investment insights based on their data."""
                         )
                     )
 
+            # Generate structured response based on all gathered information
+            print("  📊 Generating structured response...")
+            structured_prompt = """Based on the database query results, provide a structured response.
+
+Guidelines:
+- For portfolio viewing: Set response_type to "portfolio_view" and populate holdings list
+- For adding transactions: Set response_type to "transaction_added" and populate transaction field
+- For transaction history: Set response_type to "transaction_history" and populate transactions list
+- For other queries: Set response_type to "general_response"
+- Always provide a clear summary
+- Include relevant insights when possible"""
+
+            messages.append(HumanMessage(content=structured_prompt))
+
+            if not self.model_structured:
+                raise RuntimeError("Structured output model not initialized")
+
+            structured_response = await self.model_structured.ainvoke(messages)
+
+            # Format the structured response into readable text
+            final_response = format_portfolio_response(structured_response)
+
             return {
                 "success": True,
                 "agent": self.name,
                 "response": final_response,
-                "query": query
+                "query": query,
+                "structured_data": structured_response.model_dump()  # Include raw structured data
             }
 
         except Exception as e:
