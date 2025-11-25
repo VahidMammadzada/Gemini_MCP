@@ -79,14 +79,17 @@ def format_portfolio_response(response: PortfolioResponse) -> str:
     if response.holdings:
         output.append("## Current Portfolio Holdings")
         output.append("")
+        # Create table header
+        output.append("| Symbol | Shares | Avg Cost | Total Invested | Realized Gains |")
+        output.append("|--------|--------|----------|----------------|----------------|")
+        # Add each holding as a table row
         for holding in response.holdings:
-            output.append(f"**{holding.symbol}**:")
-            output.append(f"- Shares: {holding.quantity}")
-            output.append(f"- Average Cost: ${holding.avg_cost_basis:.2f} per share")
-            output.append(f"- Total Invested: ${holding.total_invested:.2f}")
-            if holding.realized_gains is not None:
-                output.append(f"- Realized Gains: ${holding.realized_gains:.2f}")
-            output.append("")
+            realized_gains = f"${holding.realized_gains:.2f}" if holding.realized_gains is not None else "$0.00"
+            output.append(
+                f"| {holding.symbol} | {holding.quantity} | "
+                f"${holding.avg_cost_basis:.2f} | ${holding.total_invested:.2f} | {realized_gains} |"
+            )
+        output.append("")
 
     # Format single transaction if present
     if response.transaction:

@@ -306,7 +306,6 @@ def create_ui():
                     label="Multi-Agent Assistant",
                     height=600,
                     show_label=True,
-                    avatar_images=("👤", "🤖"),
                 )
                 
                 with gr.Row():
@@ -324,11 +323,11 @@ def create_ui():
                     with gr.Column(scale=1):
                         gr.Markdown("""
                 ### 🤖 Available Agents:
-                - 🪙 **Crypto Agent**: Real-time crypto prices, market data, and trends | Uses Coingecko MCP Server
-                - 📊 **Stock Agent**: Stock prices, company info, financial data, and market analysis | Uses Alphavantage MCP Server
-                - 💼 **Finance Tracker**: Manage your personal stock portfolio (add transactions, track performance, get portfolio news)
-                - 📚 **RAG Agent**: Query your uploaded documents with AI | Uses ChromaDB API
-                - 🔍 **Search Agent**: Search the web using DuckDuckGo | Uses DuckDuckGo MCP Server
+                -🪙 **Crypto Agent**: Real-time crypto prices, market data, and trends | Uses Coingecko MCP Server
+                -📊 **Stock Agent**: Stock prices, company info, financial data, and market analysis | Uses Alphavantage MCP Server
+                -💼 **Finance Tracker**: Manage your personal stock portfolio (add transactions, track performance, get portfolio news)
+                -📚 **RAG Agent**: Query your uploaded documents with AI | Uses ChromaDB API
+                -🔍 **Search Agent**: Search the web using DuckDuckGo | Uses DuckDuckGo MCP Server
                         """)
                     
                     with gr.Column(scale=1):
