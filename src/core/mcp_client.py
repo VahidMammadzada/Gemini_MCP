@@ -39,7 +39,6 @@ class ProperMCPClient:
             True if connection successful
         """
         try:
-            # Prepare environment for subprocess (ensure venv scripts on PATH)
             env_vars = os.environ.copy()
             if sys.prefix:
                 scripts_dir = Path(sys.prefix) / ("Scripts" if os.name == "nt" else "bin")
@@ -50,18 +49,15 @@ class ProperMCPClient:
             if self.env:
                 env_vars.update(self.env)
 
-            # Create server parameters
             server_params = StdioServerParameters(
                 command=self.server_command,
                 args=self.server_args,
                 env=env_vars
             )
 
-            # Create stdio client and session
             from contextlib import AsyncExitStack
             self.exit_stack = AsyncExitStack()
 
-            # Connect to server via stdio
             stdio_transport = await self.exit_stack.enter_async_context(
                 stdio_client(server_params)
             )
@@ -71,17 +67,14 @@ class ProperMCPClient:
                 ClientSession(read, write)
             )
 
-            # Initialize the session
             await self.session.initialize()
 
-            # List available tools
             tools_result = await self.session.list_tools()
             self.available_tools = tools_result.tools if hasattr(tools_result, 'tools') else []
 
             print(f"  ✅ Connected to {self.name} MCP Server")
             print(f"  📋 Available tools: {len(self.available_tools)}")
 
-            # Print tool names for debugging
             for tool in self.available_tools:
                 tool_name = tool.name if hasattr(tool, 'name') else str(tool)
                 print(f"    - {tool_name}")
@@ -109,12 +102,9 @@ class ProperMCPClient:
             raise RuntimeError(f"MCP client not connected. Call connect() first.")
 
         try:
-            # Call the tool using the session
             result = await self.session.call_tool(tool_name, arguments)
 
-            # Parse result
             if hasattr(result, 'content'):
-                # Extract content from MCP response
                 content = []
                 for item in result.content:
                     if hasattr(item, 'text'):
@@ -166,11 +156,9 @@ class ProperMCPClient:
         function_declarations = []
 
         for tool in self.available_tools:
-            # Extract tool information
             tool_name = tool.name if hasattr(tool, 'name') else str(tool)
             tool_description = tool.description if hasattr(tool, 'description') else f"MCP tool: {tool_name}"
 
-            # Extract input schema
             tool_schema = tool.inputSchema if hasattr(tool, 'inputSchema') else {}
 
             if tool_schema:
@@ -191,7 +179,6 @@ class ProperMCPClient:
 
             sanitize_schema(parameters)
 
-            # Convert to Gemini format
             function_decl = {
                 "name": tool_name,
                 "description": tool_description,
@@ -214,7 +201,6 @@ class ChromaMCPClient(ProperMCPClient):
 
     def __init__(self):
         """Initialize Chroma MCP client."""
-        # Prepare environment variables for Chroma Cloud
         env = {
             "CHROMA_CLIENT_TYPE": "cloud",
             "CHROMA_TENANT": config.CHROMA_TENANT,
@@ -222,7 +208,6 @@ class ChromaMCPClient(ProperMCPClient):
             "CHROMA_API_KEY": config.CHROMA_API_KEY,
         }
 
-        # Initialize with uvx command to run chroma-mcp
         super().__init__(
             name="Chroma",
             server_command="uvx",
@@ -239,13 +224,11 @@ class CoinGeckoMCPClient(ProperMCPClient):
 
     def __init__(self):
         """Initialize CoinGecko MCP client."""
-        # Prepare environment variables
         env = {}
         if config.COINGECKO_API_KEY:
             env["COINGECKO_PRO_API_KEY"] = config.COINGECKO_API_KEY
             env["COINGECKO_ENVIRONMENT"] = "pro"
 
-        # Initialize with npx command to run CoinGecko MCP
         super().__init__(
             name="CoinGecko",
             server_command="npx",
@@ -257,7 +240,6 @@ class CoinGeckoMCPClient(ProperMCPClient):
         )
 
 
-# Alternative: Use public CoinGecko MCP endpoint
 class CoinGeckoPublicMCPClient(ProperMCPClient):
     """MCP client for CoinGecko Public MCP Server."""
 
@@ -274,7 +256,6 @@ class CoinGeckoPublicMCPClient(ProperMCPClient):
             env=None
         )
 
-# Have to provide limits to the DuckDuckGo MCP server process to avoid excessive resource usage
 class DuckDuckGoMCPClient(ProperMCPClient):
     """MCP client for DuckDuckGo MCP Server."""
 
