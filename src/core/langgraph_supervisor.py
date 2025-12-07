@@ -52,26 +52,22 @@ class ReActSupervisor:
         self.search_agent = search_agent
         self.finance_tracker = finance_tracker
         self.max_steps = max_steps
-        self.streaming_callback = None  # For streaming updates
+        self.streaming_callback = None  
         
-        # Initialize supervisor LLM with structured output
         self.supervisor_llm = ChatGoogleGenerativeAI(
             model="gemini-2.5-flash",
             temperature=0.1,
             google_api_key=config.GOOGLE_API_KEY,
         )
         
-        # Build the ReAct workflow
         self.graph = self._build_react_graph()
         self.compiled_graph = self.graph.compile()
     
     def _build_react_graph(self) -> StateGraph:
         """Build the ReAct pattern graph."""
         
-        # Create the state graph
         workflow = StateGraph(AgentState)
         
-        # Add nodes
         workflow.add_node("think", self.think_node)
         workflow.add_node("act_crypto", self.act_crypto_node)
         workflow.add_node("act_rag", self.act_rag_node)
@@ -81,10 +77,8 @@ class ReActSupervisor:
         workflow.add_node("observe", self.observe_node)
         workflow.add_node("finish", self.finish_node)
         
-        # Set entry point
         workflow.set_entry_point("think")
         
-        # Add routing from think node
         workflow.add_conditional_edges(
             "think",
             self.route_from_thinking,
@@ -98,14 +92,12 @@ class ReActSupervisor:
             }
         )
 
-        # Actions lead to observe
         workflow.add_edge("act_crypto", "observe")
         workflow.add_edge("act_rag", "observe")
         workflow.add_edge("act_stock", "observe")
         workflow.add_edge("act_search", "observe")
         workflow.add_edge("act_finance_tracker", "observe")
         
-        # Observe leads back to think (or finish if max steps)
         workflow.add_conditional_edges(
             "observe",
             self.should_continue,
@@ -129,10 +121,8 @@ class ReActSupervisor:
         """Reasoning step: Analyze current state and decide next action."""
         current_step = state.get("current_step", 0) + 1
         
-        # Build context from previous outputs
         context = self._build_context(state)
         
-        # Create reasoning prompt
         think_prompt = f"""You are a ReAct supervisor orchestrating multiple agents to answer user queries.
 
 Current Query: {state['query']}
@@ -197,7 +187,6 @@ JUSTIFICATION: [Why this action will help]"""
         if "JUSTIFICATION:" in content:
             justification = content.split("JUSTIFICATION:")[1].strip()
         
-        # Add reasoning step
         reasoning_steps = state.get("reasoning_steps", [])
         reasoning_steps.append(f"Step {current_step}: {thought} -> Action: {action}")
         
@@ -206,7 +195,6 @@ JUSTIFICATION: [Why this action will help]"""
         print(f"   Action: {action}")
         print(f"   Justification: {justification}")
         
-        # Emit streaming update
         await self._emit_update({
             "type": "thinking",
             "step": current_step,
@@ -327,10 +315,8 @@ JUSTIFICATION: [Why this action will help]"""
                     response = output.get('response', 'No response')
                     latest_output = response
                     latest_agent = agent_name
-                    # Extract search URLs if available (from search agent)
                     if "search_urls" in output:
                         search_urls = output["search_urls"]
-                    # Extract tool calls if available (from MCP agents)
                     if "tool_calls" in output:
                         tool_calls = output["tool_calls"]
                     break
@@ -408,7 +394,6 @@ Final Answer:"""
             "type": "final_start"
         })
 
-        # Stream the final answer token by token
         # Stream the final answer token by token
         final_answer = ""
         async for chunk in self.supervisor_llm.astream([
@@ -570,17 +555,15 @@ Final Answer:"""
         # Set streaming callback
         self.streaming_callback = callback
         
-        # Start processing in background
         result_task = asyncio.create_task(self.process(query, history))
         
-        # Stream updates efficiently without polling
         try:
             while not result_task.done():
                 try:
                     # Non-blocking wait with short timeout
                     update = await asyncio.wait_for(
                         updates_queue.get(), 
-                        timeout=0.01  # Very short timeout for responsiveness
+                        timeout=0.01  
                     )
                     yield update
                 except asyncio.TimeoutError:
@@ -590,7 +573,6 @@ Final Answer:"""
                     print(f"Warning: Error getting update from queue: {e}")
                     continue
             
-            # Drain any remaining updates from the queue
             while not updates_queue.empty():
                 try:
                     update = await updates_queue.get()
