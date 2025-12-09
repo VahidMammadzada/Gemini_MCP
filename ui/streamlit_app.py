@@ -8,24 +8,14 @@ from typing import Dict, List, Optional
 import time
 from pathlib import Path
 
-# ============================================================================
-# Configuration
-# ============================================================================
-
-# FastAPI backend URL
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 
-# Page configuration
 st.set_page_config(
     page_title="Multi-Agent Assistant",
     page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
-# ============================================================================
-# API Client Functions
-# ============================================================================
 
 def check_api_health() -> Dict:
     """Check if FastAPI backend is available."""
@@ -65,7 +55,7 @@ def stream_chat_response(message: str, history: List[Dict]) -> Dict:
         for line in response.iter_lines(chunk_size=1, decode_unicode=True):
             if line:
                 if line.startswith('data: '):
-                    data_str = line[6:]  # Remove 'data: ' prefix
+                    data_str = line[6:]
                     try:
                         event = json.loads(data_str)
                         yield event
@@ -89,11 +79,6 @@ def upload_document(file) -> Dict:
     except Exception as e:
         return {"success": False, "message": str(e)}
 
-
-# ============================================================================
-# Session State Initialization
-# ============================================================================
-
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
@@ -105,10 +90,6 @@ if "show_intermediate_steps" not in st.session_state:
 
 if "processing" not in st.session_state:
     st.session_state.processing = False
-
-# ============================================================================
-# Custom CSS
-# ============================================================================
 
 st.markdown("""
 <style>
@@ -198,15 +179,11 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ============================================================================
-# Sidebar
-# ============================================================================
 
 with st.sidebar:
     st.title("🤖 Multi-Agent Assistant")
     st.markdown("---")
 
-    # Settings
     st.subheader("⚙️ Settings")
     st.session_state.show_intermediate_steps = st.checkbox(
         "Show Reasoning Steps",
@@ -221,7 +198,6 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # Information
     st.subheader("ℹ️ Available Agents")
     st.markdown("""
     - 🪙 **Crypto Agent**: Cryptocurrency prices & data
@@ -234,17 +210,12 @@ with st.sidebar:
     st.markdown("---")
     st.caption("Powered by FastAPI + Gemini 2.5 Pro")
 
-# ============================================================================
-# Main Chat Interface
-# ============================================================================
-
 st.title("💬 Multi-Agent Chat Assistant")
 st.markdown("Ask questions about crypto, stocks, documents, or search the web!")
 
 # Container for chat messages
 chat_container = st.container()
 
-# Display chat history in the container
 with chat_container:
     for message in st.session_state.messages:
         role = message["role"]
@@ -278,7 +249,6 @@ with chat_container:
                             st.write(content)
 
                 else:
-                    # Regular assistant message
                     st.markdown(content)
 
                     # Display search references if available
@@ -289,10 +259,8 @@ with chat_container:
                         for ref in refs:
                             st.markdown(f"- [{ref['title']}]({ref['url']})")
             else:
-                # User or regular message
                 st.markdown(content)
 
-# Fixed bottom container for input and file upload
 st.markdown("---")
 input_col, upload_col = st.columns([4, 1])
 
@@ -308,7 +276,7 @@ with upload_col:
         key="file_uploader"
     )
 
-# Handle document upload
+# Document upload
 if uploaded_file and not st.session_state.processing:
     with st.spinner("Uploading document..."):
         result = upload_document(uploaded_file)
@@ -317,11 +285,10 @@ if uploaded_file and not st.session_state.processing:
         else:
             st.error(f"❌ {result.get('message', 'Upload failed')}")
 
-# Handle chat input
+# Chat input
 if prompt and not st.session_state.processing:
     st.session_state.processing = True
 
-    # Add user message to chat
     st.session_state.messages.append({"role": "user", "content": prompt})
     st.session_state.chat_history.append({"role": "user", "content": prompt})
 
@@ -332,7 +299,7 @@ if prompt and not st.session_state.processing:
 
         # Get response from API
         with st.chat_message("assistant"):
-            # Create placeholders for streaming (thinking steps first, then final answer)
+            # Placeholders for streaming (thinking steps first, then final answer)
             thinking_placeholder = st.container()
             response_placeholder = st.empty()
 
@@ -383,7 +350,7 @@ if prompt and not st.session_state.processing:
                         agent = event.get("agent", "unknown")
                         if st.session_state.show_intermediate_steps:
                             with thinking_placeholder:
-                                # Create a placeholder for this agent's status
+                                # Placeholder for this agent's status
                                 agent_status_placeholders[agent] = st.empty()
                                 agent_status_placeholders[agent].info(f"🔧 Calling **{agent.title()}** Agent...")
 
@@ -433,13 +400,13 @@ if prompt and not st.session_state.processing:
                                 st.info("🔄 Synthesizing final answer...")
 
                     elif event_type == "final_token":
-                        # Stream token by token (use write() to handle incomplete markdown)
+                        # Stream token by token as plain text to avoid incomplete markdown rendering
                         final_answer = event.get("accumulated", "")
-                        response_placeholder.write(final_answer)
+                        response_placeholder.text(final_answer)
 
                     elif event_type == "final_complete":
                         if final_answer:
-                            # Render final version with proper markdown
+                            # Render final complete version with proper markdown formatting
                             response_placeholder.markdown(final_answer)
 
                     elif event_type == "error":
