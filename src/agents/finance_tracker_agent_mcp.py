@@ -71,11 +71,9 @@ def format_portfolio_response(response: PortfolioResponse) -> str:
     """Format structured portfolio response into readable text."""
     output = []
 
-    # Add summary
     output.append(response.summary)
     output.append("")
 
-    # Format holdings if present
     if response.holdings:
         output.append("## Current Portfolio Holdings")
         output.append("")
@@ -91,7 +89,7 @@ def format_portfolio_response(response: PortfolioResponse) -> str:
             )
         output.append("")
 
-    # Format single transaction if present
+    # Format single transaction
     if response.transaction:
         output.append("## Transaction Details")
         output.append("")
@@ -106,7 +104,7 @@ def format_portfolio_response(response: PortfolioResponse) -> str:
             output.append(f"- **Notes**: {t.notes}")
         output.append("")
 
-    # Format transaction history if present
+    # Format transaction history
     if response.transactions:
         output.append("## Transaction History")
         output.append("")
@@ -116,12 +114,12 @@ def format_portfolio_response(response: PortfolioResponse) -> str:
                 output.append(f"  Notes: {t.notes}")
         output.append("")
 
-    # Add total portfolio value if present
+    # Add total portfolio value
     if response.total_portfolio_value is not None:
         output.append(f"**Total Portfolio Value**: ${response.total_portfolio_value:.2f}")
         output.append("")
 
-    # Add insights if present
+    # Add insights
     if response.insights:
         output.append("## Key Insights")
         output.append("")
@@ -275,7 +273,6 @@ Be helpful, accurate, and provide investment insights based on their data."""
 
                 tool_calls = getattr(ai_message, "tool_calls", [])
                 if not tool_calls:
-                    # No more tool calls - exit loop
                     break
 
                 for call in tool_calls:
@@ -325,7 +322,7 @@ Guidelines:
                 "agent": self.name,
                 "response": final_response,
                 "query": query,
-                "structured_data": structured_response.model_dump(),  # Include raw structured data
+                "structured_data": structured_response.model_dump(),
                 "tool_calls": tool_calls_info
             }
 
@@ -344,7 +341,6 @@ Guidelines:
         """Cleanup resources."""
         if self.toolbox_client:
             try:
-                # Exit the async context manager
                 await self.toolbox_client.__aexit__(None, None, None)
             except Exception as e:
                 print(f"  ⚠️  Warning during cleanup: {e}")
